@@ -29,7 +29,7 @@ deliberately out of scope and the extensions it grows toward, see `CLAUDE.md` (S
 
 ```bash
 bun install
-cp .env.example .env   # add OPENROUTER_API_KEY and TAVILY_API_KEY
+cp .env.example .env   # add OPENROUTER_API_KEY and EXA_API_KEY
 bun run demo           # enriches 3 company rows into a free-trial column
 ```
 
@@ -61,7 +61,7 @@ console.log(await runTable(action, rows));
 | File | Role |
 |---|---|
 | `src/types.ts`    | the `Action` primitive + `RunResult` contract |
-| `src/tools/web.ts`| `web_search` + `fetch_page` (Tavily), record sources & steps |
+| `src/tools/web.ts`| `web_search` + `fetch_page` (Exa), record sources & steps |
 | `src/agent.ts`    | Mastra agent on OpenRouter, tuned research behaviour |
 | `src/engine.ts`   | `run()` one row · `runTable()` a table · template-fill · conditional-run · repair retry |
 | `src/index.ts`    | runnable demo |

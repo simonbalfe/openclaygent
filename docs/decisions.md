@@ -59,6 +59,17 @@ Tools are built fresh inside each `run` and closed over a `Sink` (`{ sources, lo
 rather than reading/writing module-level state. This keeps concurrent runs isolated and
 lets `RunResult` report exactly the URLs and steps that this run produced.
 
+## Search backend: Exa
+
+`web_search` and `fetch_page` (`src/tools/web.ts`) call Exa's REST API (`api.exa.ai`,
+auth via the `x-api-key` header). Chosen over Tavily because Exa's `/search` returns page
+text **inline** via `contents` — for indexable public pages the search step often already
+carries the answer, so the agent never needs a separate `fetch_page`/`/contents` round.
+That is the cheapest, lowest-latency retrieval path. Search requests cap inline text
+(`contents.text.maxCharacters`) to keep tool output bounded; `fetch_page` pulls full text
+via `/contents` only when a snippet is insufficient. The two tools are the swap seam — the
+agent and engine are unaware of the provider.
+
 ## No `.claude/` rules or hooks
 
 Deliberate. At this size — a handful of source files, a lean CLAUDE.md, this `docs/`

@@ -2,22 +2,22 @@ import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 import type { AgentStep } from "../types.ts";
 
-const TAVILY = "https://api.tavily.com";
+const EXA = "https://api.exa.ai";
 
 export interface Sink {
   sources: Set<string>;
   log: AgentStep[];
 }
 
-async function tavily<T>(path: string, body: unknown): Promise<T> {
-  const key = process.env.TAVILY_API_KEY;
-  if (!key) throw new Error("TAVILY_API_KEY is not set");
-  const res = await fetch(`${TAVILY}${path}`, {
+async function exa<T>(path: string, body: unknown): Promise<T> {
+  const key = process.env.EXA_API_KEY;
+  if (!key) throw new Error("EXA_API_KEY is not set");
+  const res = await fetch(`${EXA}${path}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+    headers: { "Content-Type": "application/json", "x-api-key": key },
     body: JSON.stringify(body),
   });
-  if (!res.ok) throw new Error(`Tavily ${path} ${res.status}: ${await res.text()}`);
+  if (!res.ok) throw new Error(`Exa ${path} ${res.status}: ${await res.text()}`);
   return res.json() as Promise<T>;
 }
 
@@ -36,17 +36,22 @@ export function webTools(sink: Sink) {
       ),
     }),
     execute: async ({ query, max_results }) => {
-      const data = await tavily<{
-        results: { title: string; url: string; content: string }[];
+      const data = await exa<{
+        results: { title?: string; url: string; text?: string; highlights?: string[] }[];
       }>("/search", {
         query,
-        max_results,
-        search_depth: "basic",
-        include_answer: false,
+        type: "auto",
+        numResults: max_results,
+        contents: { text: { maxCharacters: 1200 } },
       });
-      for (const r of data.results) sink.sources.add(r.url);
-      sink.log.push({ type: "search", query, resultCount: data.results.length });
-      return { results: data.results };
+      const results = data.results.map((r) => ({
+        title: r.title ?? "",
+        url: r.url,
+        content: r.highlights?.join(" ") || r.text || "",
+      }));
+      for (const r of results) sink.sources.add(r.url);
+      sink.log.push({ type: "search", query, resultCount: results.length });
+      return { results };
     },
   });
 
@@ -61,13 +66,13 @@ export function webTools(sink: Sink) {
       pages: z.array(z.object({ url: z.string(), text: z.string() })),
     }),
     execute: async ({ urls }) => {
-      const data = await tavily<{ results: { url: string; raw_content: string }[] }>(
-        "/extract",
-        { urls },
-      );
+      const data = await exa<{ results: { url: string; text?: string }[] }>("/contents", {
+        urls,
+        text: true,
+      });
       const pages = data.results.map((r) => ({
         url: r.url,
-        text: (r.raw_content ?? "").slice(0, 12000),
+        text: (r.text ?? "").slice(0, 12000),
       }));
       for (const p of pages) sink.sources.add(p.url);
       sink.log.push({ type: "fetch", urls, resultCount: pages.length });

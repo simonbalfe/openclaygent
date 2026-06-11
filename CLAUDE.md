@@ -2,13 +2,13 @@
 
 Per-row web-research agent: NL brief + Zod output schema → typed, cited JSON for each row
 of a table. Runtime **Bun**. Spine **Mastra + OpenRouter** (one key, any model). Search/
-fetch via **Tavily**.
+fetch via **Exa**.
 
 ## Run it
 
 - `bun run demo` — runs `src/index.ts` (3-company free-trial enrichment).
 - `bun run typecheck` — `tsc --noEmit`.
-- Needs `OPENROUTER_API_KEY` + `TAVILY_API_KEY` in `.env` (Bun auto-loads it).
+- Needs `OPENROUTER_API_KEY` + `EXA_API_KEY` in `.env` (Bun auto-loads it).
 
 ## Key files
 

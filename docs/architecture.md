@@ -44,9 +44,9 @@ fixed, the row varies.
 `src/tools/web.ts` builds two tools **per run**, bound to a `Sink` so every URL and step
 is recorded without global state:
 
-- `web_search(query)` — Tavily search. Returns title/url/snippet. Snippets are usually
+- `web_search(query)` — Exa search (/search with inline contents). Returns title/url/snippet. Snippets are usually
   enough to answer.
-- `fetch_page(urls)` — Tavily extract. Full cleaned page text, capped at a bounded read
+- `fetch_page(urls)` — Exa contents. Full cleaned page text, capped at a bounded read
   window. Only used when snippets are insufficient.
 
 Cheapest-first: the agent is told to prefer search snippets and only fetch when it needs a
@@ -67,7 +67,7 @@ Every run returns `RunResult<S>` (`src/types.ts`):
 | File | Role |
 |---|---|
 | `src/types.ts` | `Action` primitive, `RunResult` contract, `defineAction` helper |
-| `src/tools/web.ts` | `web_search` + `fetch_page` (Tavily), the per-run `Sink` |
+| `src/tools/web.ts` | `web_search` + `fetch_page` (Exa), the per-run `Sink` |
 | `src/agent.ts` | OpenRouter provider, default model, research behaviour, `buildAgent` |
 | `src/engine.ts` | `run` (one row), `runTable` (a table), template fill, conditional gate, repair retry |
 | `src/index.ts` | runnable demo: enrich 3 company rows into a free-trial column |
