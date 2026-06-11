@@ -33,6 +33,20 @@ cp .env.example .env   # add OPENROUTER_API_KEY and EXA_API_KEY
 bun run demo           # enriches 3 company rows into a free-trial column
 ```
 
+## CLI
+
+```bash
+bun run cli -- \
+  --instructions "What industry is this company in? Check their website." \
+  --template "Company: {{company}}\nWebsite: {{domain}}" \
+  --schema '{"industry":"string","confidence":"low|medium|high"}' \
+  --input company=Linear --input domain=linear.app
+```
+
+Batch a CSV/JSON of rows with `--rows file.csv`, skip rows missing a field with
+`--require domain`, get raw JSON with `--json`. Full flag reference: `bun run cli -- --help`
+and `docs/architecture.md` (CLI).
+
 ## Define your own action
 
 ```ts

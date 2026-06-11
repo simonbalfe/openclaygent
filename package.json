@@ -5,7 +5,11 @@
   "type": "module",
   "module": "src/index.ts",
   "private": true,
+  "bin": {
+    "openclaygent": "src/cli.ts"
+  },
   "scripts": {
+    "cli": "bun run src/cli.ts",
     "demo": "bun run src/index.ts",
     "typecheck": "tsc --noEmit"
   },

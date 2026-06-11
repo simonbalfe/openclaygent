@@ -6,6 +6,7 @@ fetch via **Exa**.
 
 ## Run it
 
+- `bun run cli -- --help` — the CLI entry (`src/cli.ts`); see `docs/architecture.md` (CLI).
 - `bun run demo` — runs `src/index.ts` (3-company free-trial enrichment).
 - `bun run typecheck` — `tsc --noEmit`.
 - Needs `OPENROUTER_API_KEY` + `EXA_API_KEY` in `.env` (Bun auto-loads it).
@@ -15,6 +16,7 @@ fetch via **Exa**.
 - `src/types.ts` — `Action` primitive + `RunResult` contract.
 - `src/engine.ts` — `run` (one row), `runTable` (a table).
 - `src/agent.ts` + `src/tools/web.ts` — Mastra agent + `web_search`/`fetch_page`.
+- `src/cli.ts` + `src/schema.ts` — CLI front end + JSON→Zod schema builder.
 - `src/index.ts` — runnable demo.
 
 ## Docs (read before changing code)

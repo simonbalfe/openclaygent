@@ -70,7 +70,39 @@ Every run returns `RunResult<S>` (`src/types.ts`):
 | `src/tools/web.ts` | `web_search` + `fetch_page` (Exa), the per-run `Sink` |
 | `src/agent.ts` | OpenRouter provider, default model, research behaviour, `buildAgent` |
 | `src/engine.ts` | `run` (one row), `runTable` (a table), template fill, conditional gate, repair retry |
+| `src/cli.ts` | CLI front end: parse args, build the action, load rows, print results |
+| `src/schema.ts` | `jsonToZod` — turn a CLI JSON shape into the action's Zod `output` |
 | `src/index.ts` | runnable demo: enrich 3 company rows into a free-trial column |
+
+## CLI
+
+`src/cli.ts` is the command-line front end. It builds an `Action` from flags (or an
+`--action` file), loads rows (a single `--input` row, or a `--rows` JSON/CSV batch), runs
+`runTable`, and prints results.
+
+Single row:
+
+```bash
+bun run cli -- \
+  --instructions "What industry is this company in? Check their website." \
+  --template "Company: {{company}}\nWebsite: {{domain}}" \
+  --schema '{"industry":"string","confidence":"low|medium|high"}' \
+  --input company=Linear --input domain=linear.app
+```
+
+Batch from CSV (header row supplies the `{{slots}}`), skipping rows missing a field:
+
+```bash
+bun run cli -- \
+  --instructions "What industry is this company in?" \
+  --template "Company: {{company}}\nWebsite: {{domain}}" \
+  --schema '{"industry":"string","confidence":"low|medium|high"}' \
+  --require domain --rows rows.csv
+```
+
+Schema field syntax (`jsonToZod`): `string` | `number` | `boolean` | `a|b|c` (enum) |
+trailing `?` for nullable (e.g. `string?`). `--json` prints raw JSON; `--out <file>`
+writes results to disk; `--model <id>` overrides the model per run.
 
 ## Scope
 
