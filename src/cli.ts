@@ -1,5 +1,5 @@
 import { runTable, type RunOptions } from "./engine.ts";
-import { jsonToZod } from "./schema.ts";
+import { buildSchema } from "./schema.ts";
 import { defineAction, type Row, type RunResult } from "./types.ts";
 import type { z } from "zod";
 
@@ -12,8 +12,9 @@ Usage:
 Action (inline):
   --instructions <text>   What to research / how to behave (system prompt).
   --template <text>       User prompt with {{field}} slots, e.g. "Company: {{company}}".
-  --schema <json>         Output shape, e.g. '{"industry":"string","confidence":"low|medium|high"}'.
-                          Field types: string | number | boolean | a|b|c (enum) | trailing ? = nullable.
+  --schema <json>         Output shape. Standard JSON Schema, or the short form:
+                          '{"industry":"string","confidence":"low|medium|high"}'.
+                          Short types: string | number | boolean | a|b|c (enum) | trailing ? = nullable.
   --action <file.json>    Load { name, instructions, template, schema } from a file instead.
   --require <field>       Skip any row missing this field (conditionalRun).
 
@@ -137,7 +138,7 @@ const action = defineAction({
   name: actionSpec.name ?? "cli_action",
   instructions: actionSpec.instructions,
   template: actionSpec.template,
-  output: jsonToZod(actionSpec.schema),
+  output: buildSchema(actionSpec.schema),
   conditionalRun: requireField ? (row) => Boolean(row[requireField]) : undefined,
 });
 

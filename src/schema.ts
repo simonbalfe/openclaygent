@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { convertJsonSchemaToZod } from "zod-from-json-schema";
 
 const PRIMS: Record<string, () => z.ZodTypeAny> = {
   string: () => z.string(),
@@ -37,8 +38,16 @@ function fieldToZod(spec: unknown): z.ZodTypeAny {
   return nullable ? base.nullable() : base;
 }
 
-export function jsonToZod(shape: Record<string, unknown>): z.ZodObject<Record<string, z.ZodTypeAny>> {
+function jsonToZod(shape: Record<string, unknown>): z.ZodObject<Record<string, z.ZodTypeAny>> {
   const out: Record<string, z.ZodTypeAny> = {};
   for (const [k, v] of Object.entries(shape)) out[k] = fieldToZod(v);
   return z.object(out);
+}
+
+function isJsonSchema(o: Record<string, unknown>): boolean {
+  return o.type === "object" || "properties" in o || "$schema" in o;
+}
+
+export function buildSchema(shape: Record<string, unknown>): z.ZodType {
+  return isJsonSchema(shape) ? convertJsonSchemaToZod(shape) : jsonToZod(shape);
 }

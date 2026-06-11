@@ -155,9 +155,12 @@ bun run cli -- \
   --require domain --rows rows.csv
 ```
 
-Schema field syntax (`jsonToZod`): `string` | `number` | `boolean` | `a|b|c` (enum) |
-trailing `?` for nullable (e.g. `string?`). `--json` prints raw JSON; `--out <file>`
-writes results to disk; `--model <id>` overrides the model per run.
+`--schema` accepts **standard JSON Schema** (the conventional interchange — converted to
+Zod at the boundary via `zod-from-json-schema`) **or** a short form for flat outputs:
+`string` | `number` | `boolean` | `a|b|c` (enum) | trailing `?` for nullable. `src/schema.ts`
+detects which (a real JSON Schema has `type:"object"`/`properties`) and routes accordingly;
+either way the engine receives a Zod schema. `--json` prints raw JSON; `--out <file>` writes
+results to disk; `--model <id>` overrides the model per run.
 
 ## Scope
 
