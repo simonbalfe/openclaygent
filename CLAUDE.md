@@ -23,6 +23,7 @@ fetch via **Exa**.
 
 - `docs/architecture.md` — the action primitive, the loop, the contract, file map, scope.
 - `docs/decisions.md` — the non-obvious choices and the conventions that bite (Mastra v1 tool signature, separate structuring model, token cap, model choice, repair retry). Read this before touching the agent, tools, or engine — each gotcha silently breaks a run.
+- `docs/roadmap.md` — feature checklist: what's shipped and what's still to add (parity gaps vs Claygent + Ferret).
 
 ## Standing orders
 

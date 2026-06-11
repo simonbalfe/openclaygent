@@ -84,3 +84,4 @@ console.log(await runTable(action, rows));
 
 - `docs/architecture.md` — the action primitive, the loop, the contract, scope.
 - `docs/decisions.md` — non-obvious choices and the conventions that bite.
+- `docs/roadmap.md` — feature checklist: shipped vs still to add.
