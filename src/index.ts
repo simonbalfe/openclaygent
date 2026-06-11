@@ -2,17 +2,11 @@ import { z } from "zod";
 import { runTable } from "./engine.ts";
 import { defineAction } from "./types.ts";
 
-/**
- * A last-mile enrichment column: "does this company offer a free trial?"
- * No static data provider sells this reliably — it's exactly what Claygent
- * is for. One action, run across a whole table of company rows.
- */
 const freeTrial = defineAction({
   name: "free_trial_check",
   instructions:
     "Determine whether the given company offers a free trial or free tier of its product. Check the company's own site (pricing/product pages) first.",
   template: "Company: {{company}}\nWebsite: {{domain}}",
-  // Skip rows with no domain — saves a wasted run (Clay's conditional run).
   conditionalRun: (row) => Boolean(row.domain),
   output: z.object({
     has_free_trial: z.boolean().nullable().describe("true if a free trial OR free tier exists"),

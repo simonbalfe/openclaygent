@@ -4,15 +4,11 @@ import type { Sink } from "./tools/web.ts";
 import type { Action, Row, RunResult } from "./types.ts";
 
 export interface RunOptions {
-  /** OpenRouter model id. Defaults to OPENCLAY_MODEL / gpt-4o-mini. */
   model?: string;
-  /** Hard cap on agent loop iterations. */
   maxSteps?: number;
-  /** Cap output tokens so requests fit a small OpenRouter balance. */
   maxOutputTokens?: number;
 }
 
-/** Fill {{field}} slots from the row; record which were missing. */
 function fillTemplate(template: string, row: Row): { text: string; missing: string[] } {
   const missing: string[] = [];
   const text = template.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_, key: string) => {
@@ -26,7 +22,6 @@ function fillTemplate(template: string, row: Row): { text: string; missing: stri
   return { text, missing };
 }
 
-/** Run one action against one row. The core Claygent unit. */
 export async function run<S extends z.ZodType>(
   action: Action<S>,
   row: Row,
@@ -35,7 +30,6 @@ export async function run<S extends z.ZodType>(
   const model = opts.model ?? DEFAULT_MODEL;
   const started = performance.now();
 
-  // Conditional run — skip rows that don't qualify (Clay's credit saver).
   if (action.conditionalRun && !action.conditionalRun(row)) {
     return {
       result: null,
@@ -53,9 +47,6 @@ export async function run<S extends z.ZodType>(
   const { text, missing } = fillTemplate(action.template, row);
   if (missing.length) console.warn(`[${action.name}] row missing: ${missing.join(", ")}`);
 
-  // One repair retry: models intermittently end on an empty/non-JSON turn and
-  // the structurer yields nothing. Re-asking once is the documented line
-  // between "usually works" and reliable across thousands of rows.
   let out: z.infer<S> | null = null;
   let usage: { inputTokens?: number; outputTokens?: number } = {};
   for (let attempt = 0; attempt < 2 && out === null; attempt++) {
@@ -71,8 +62,6 @@ export async function run<S extends z.ZodType>(
       {
         maxSteps: opts.maxSteps ?? 5,
         modelSettings: { maxOutputTokens: opts.maxOutputTokens ?? 1500 },
-        // Separate structuring model: the main agent loops with tools in text
-        // mode, then this model shapes the final answer into the schema.
         structuredOutput: { schema: action.output, model: openrouter.chat(model) },
       },
     );
@@ -95,7 +84,6 @@ export async function run<S extends z.ZodType>(
   };
 }
 
-/** Run one action across a whole table — the per-row enrichment shape. */
 export async function runTable<S extends z.ZodType>(
   action: Action<S>,
   rows: Row[],

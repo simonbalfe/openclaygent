@@ -65,3 +65,8 @@ console.log(await runTable(action, rows));
 | `src/agent.ts`    | Mastra agent on OpenRouter, tuned research behaviour |
 | `src/engine.ts`   | `run()` one row · `runTable()` a table · template-fill · conditional-run · repair retry |
 | `src/index.ts`    | runnable demo |
+
+## Docs
+
+- `docs/architecture.md` — the action primitive, the loop, the contract, scope.
+- `docs/decisions.md` — non-obvious choices and the conventions that bite.

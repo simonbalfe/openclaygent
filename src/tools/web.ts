@@ -4,7 +4,6 @@ import type { AgentStep } from "../types.ts";
 
 const TAVILY = "https://api.tavily.com";
 
-/** Where each run accumulates its sources + step log. */
 export interface Sink {
   sources: Set<string>;
   log: AgentStep[];
@@ -22,10 +21,6 @@ async function tavily<T>(path: string, body: unknown): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-/**
- * Both tools for one run. They share a sink so the engine can report every
- * URL touched and every step taken — no global state.
- */
 export function webTools(sink: Sink) {
   const web_search = createTool({
     id: "web_search",
@@ -72,7 +67,6 @@ export function webTools(sink: Sink) {
       );
       const pages = data.results.map((r) => ({
         url: r.url,
-        // keep a sane read window so token cost stays bounded
         text: (r.raw_content ?? "").slice(0, 12000),
       }));
       for (const p of pages) sink.sources.add(p.url);

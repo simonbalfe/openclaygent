@@ -6,7 +6,6 @@ export const openrouter = createOpenRouter({ apiKey: process.env.OPENROUTER_API_
 
 export const DEFAULT_MODEL = process.env.OPENCLAY_MODEL ?? "deepseek/deepseek-chat";
 
-/** The tuned research behaviour — the part Clay calls the moat. */
 const BEHAVIOUR = [
   "You are a precise web-research agent enriching one row of a data table.",
   "Loop: search the web, read pages only when snippets are not enough, then answer.",
@@ -19,10 +18,6 @@ const BEHAVIOUR = [
   "- Cite the exact URLs you used in any `sources` field.",
 ].join("\n");
 
-/**
- * Fresh agent per run, bound to this run's tool sink so we can record every
- * URL and step. Model is swappable per call (the tier knob).
- */
 export function buildAgent(sink: Sink, model: string = DEFAULT_MODEL): Agent {
   const { web_search, fetch_page } = webTools(sink);
   return new Agent({
