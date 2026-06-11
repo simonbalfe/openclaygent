@@ -11,6 +11,7 @@
   "scripts": {
     "cli": "bun run src/cli.ts",
     "demo": "bun run src/index.ts",
+    "knip": "knip-bun",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -20,6 +21,7 @@
   },
   "devDependencies": {
     "@types/bun": "latest",
+    "knip": "^6.16.1",
     "typescript": "^5"
   }
 }

@@ -9,6 +9,7 @@ fetch via **Exa**.
 - `bun run cli -- --help` — the CLI entry (`src/cli.ts`); see `docs/architecture.md` (CLI).
 - `bun run demo` — runs `src/index.ts` (3-company free-trial enrichment).
 - `bun run typecheck` — `tsc --noEmit`.
+- `bun run knip` — dead-code / unused-export / unused-dep check (config: `knip.json`, library surface is `src/engine.ts`).
 - Needs `OPENROUTER_API_KEY` + `EXA_API_KEY` in `.env` (Bun auto-loads it).
 
 ## Key files
