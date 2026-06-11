@@ -28,3 +28,10 @@ key, any model). Search/fetch: **Tavily**.
 MVP = the single action loop only (~80% of Claygent's value). NOT built yet, by design:
 waterfall (ranked-provider fallback), recipe (multi-step chains), model-tiers, batch-over-Neon.
 See the vault `projects/claygent_clone/` for the full architecture these extend toward.
+This section is the canonical scope home; README points here rather than restating it.
+
+## Context system
+
+No `.claude/` rules or hooks — deliberate. At 5 files with a lean CLAUDE.md + README and
+no live/deployed claims, there is no drift pressure to enforce against. Revisit when the
+extensions above land and the doc surface grows.

@@ -22,8 +22,8 @@ output:  { result, sources, agentLog, tokens, durationMs, model }
 - **Repair retry** — one re-ask if the model returns no structured answer; the line between "usually works" and reliable at scale.
 - **Provenance** — every source URL and tool step recorded for replay.
 
-This is the single `use-ai` **action** loop — ~80% of Claygent's value. Waterfalls,
-recipes, model-tiers, and batch-over-Neon are the documented next extensions.
+This is the single `use-ai` **action** loop — ~80% of Claygent's value. For what's
+deliberately out of scope and the extensions it grows toward, see `CLAUDE.md` (Scope).
 
 ## Setup
 
