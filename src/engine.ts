@@ -1,5 +1,5 @@
 import type { z } from "zod";
-import { buildAgent, DEFAULT_MODEL } from "./agent.ts";
+import { buildAgent, DEFAULT_MODEL, openrouter } from "./agent.ts";
 import type { Sink } from "./tools/web.ts";
 import type { Action, Row, RunResult } from "./types.ts";
 
@@ -53,21 +53,37 @@ export async function run<S extends z.ZodType>(
   const { text, missing } = fillTemplate(action.template, row);
   if (missing.length) console.warn(`[${action.name}] row missing: ${missing.join(", ")}`);
 
-  const res = await agent.generate(
-    [
-      { role: "system", content: action.instructions },
-      { role: "user", content: text },
-    ],
-    {
-      maxSteps: opts.maxSteps ?? 5,
-      modelSettings: { maxOutputTokens: opts.maxOutputTokens ?? 1500 },
-      structuredOutput: { schema: action.output },
-    },
-  );
-
-  const out = (res as { object?: z.infer<S> }).object ?? null;
+  // One repair retry: models intermittently end on an empty/non-JSON turn and
+  // the structurer yields nothing. Re-asking once is the documented line
+  // between "usually works" and reliable across thousands of rows.
+  let out: z.infer<S> | null = null;
+  let usage: { inputTokens?: number; outputTokens?: number } = {};
+  for (let attempt = 0; attempt < 2 && out === null; attempt++) {
+    const nudge =
+      attempt === 0
+        ? text
+        : `${text}\n\n(Your previous attempt returned no structured answer. Use what you found and return the JSON now.)`;
+    const res = await agent.generate(
+      [
+        { role: "system", content: action.instructions },
+        { role: "user", content: nudge },
+      ],
+      {
+        maxSteps: opts.maxSteps ?? 5,
+        modelSettings: { maxOutputTokens: opts.maxOutputTokens ?? 1500 },
+        // Separate structuring model: the main agent loops with tools in text
+        // mode, then this model shapes the final answer into the schema.
+        structuredOutput: { schema: action.output, model: openrouter.chat(model) },
+      },
+    );
+    out = (res as { object?: z.infer<S> }).object ?? null;
+    const u = (res as { usage?: { inputTokens?: number; outputTokens?: number } }).usage ?? {};
+    usage = {
+      inputTokens: (usage.inputTokens ?? 0) + (u.inputTokens ?? 0),
+      outputTokens: (usage.outputTokens ?? 0) + (u.outputTokens ?? 0),
+    };
+  }
   sink.log.push({ type: "answer" });
-  const usage = (res as { usage?: { inputTokens?: number; outputTokens?: number } }).usage ?? {};
 
   return {
     result: out,

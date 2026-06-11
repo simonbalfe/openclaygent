@@ -2,9 +2,9 @@ import { Agent } from "@mastra/core/agent";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { webTools, type Sink } from "./tools/web.ts";
 
-const openrouter = createOpenRouter({ apiKey: process.env.OPENROUTER_API_KEY ?? "" });
+export const openrouter = createOpenRouter({ apiKey: process.env.OPENROUTER_API_KEY ?? "" });
 
-export const DEFAULT_MODEL = process.env.OPENCLAY_MODEL ?? "openai/gpt-4o-mini";
+export const DEFAULT_MODEL = process.env.OPENCLAY_MODEL ?? "deepseek/deepseek-chat";
 
 /** The tuned research behaviour — the part Clay calls the moat. */
 const BEHAVIOUR = [

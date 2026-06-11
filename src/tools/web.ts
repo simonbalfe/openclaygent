@@ -40,17 +40,17 @@ export function webTools(sink: Sink) {
         z.object({ title: z.string(), url: z.string(), content: z.string() }),
       ),
     }),
-    execute: async ({ context }) => {
+    execute: async ({ query, max_results }) => {
       const data = await tavily<{
         results: { title: string; url: string; content: string }[];
       }>("/search", {
-        query: context.query,
-        max_results: context.max_results,
+        query,
+        max_results,
         search_depth: "basic",
         include_answer: false,
       });
       for (const r of data.results) sink.sources.add(r.url);
-      sink.log.push({ type: "search", query: context.query, resultCount: data.results.length });
+      sink.log.push({ type: "search", query, resultCount: data.results.length });
       return { results: data.results };
     },
   });
@@ -65,10 +65,10 @@ export function webTools(sink: Sink) {
     outputSchema: z.object({
       pages: z.array(z.object({ url: z.string(), text: z.string() })),
     }),
-    execute: async ({ context }) => {
+    execute: async ({ urls }) => {
       const data = await tavily<{ results: { url: string; raw_content: string }[] }>(
         "/extract",
-        { urls: context.urls },
+        { urls },
       );
       const pages = data.results.map((r) => ({
         url: r.url,
@@ -76,7 +76,7 @@ export function webTools(sink: Sink) {
         text: (r.raw_content ?? "").slice(0, 12000),
       }));
       for (const p of pages) sink.sources.add(p.url);
-      sink.log.push({ type: "fetch", urls: context.urls, resultCount: pages.length });
+      sink.log.push({ type: "fetch", urls, resultCount: pages.length });
       return { pages };
     },
   });
