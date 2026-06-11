@@ -30,7 +30,7 @@ deliberately out of scope and the extensions it grows toward, see `CLAUDE.md` (S
 ```bash
 bun install
 cp .env.example .env   # add OPENROUTER_API_KEY and EXA_API_KEY
-bun run demo           # enriches 3 company rows into a free-trial column
+bun test               # run the test suite (live test skipped unless RUN_LIVE=1)
 ```
 
 ## CLI
@@ -70,6 +70,13 @@ const rows = [{ company: "Linear", domain: "linear.app" }];
 console.log(await runTable(action, rows));
 ```
 
+## Tests
+
+```bash
+bun test               # deterministic tests: schema building, skip path, template fill
+RUN_LIVE=1 bun test    # also runs the live end-to-end test (needs API keys + credits)
+```
+
 ## Layout
 
 | File | Role |
@@ -78,7 +85,8 @@ console.log(await runTable(action, rows));
 | `src/tools/web.ts`| `web_search` + `fetch_page` (Exa), record sources & steps |
 | `src/agent.ts`    | Mastra agent on OpenRouter, tuned research behaviour |
 | `src/engine.ts`   | `run()` one row · `runTable()` a table · template-fill · conditional-run · repair retry |
-| `src/index.ts`    | runnable demo |
+| `src/cli.ts` · `src/schema.ts` | CLI front end · JSON-Schema/short-form → Zod |
+| `tests/`          | `bun test` suite (schema, skip path; live opt-in via `RUN_LIVE`) |
 
 ## Docs
 

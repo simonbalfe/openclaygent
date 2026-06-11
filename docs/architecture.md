@@ -10,7 +10,7 @@ against each row, the agent does the web research, a structuring pass shapes the
 
 ```mermaid
 flowchart LR
-  CLI["CLI / demo<br/>(entry point)"] --> ACT["Action<br/>instructions · template · schema · skip rule"]
+  CLI["CLI<br/>(entry point)"] --> ACT["Action<br/>instructions · template · schema · skip rule"]
   CLI --> ROWS["Row(s)<br/>company · domain · ..."]
   ACT --> ENG
   ROWS --> ENG
@@ -126,8 +126,8 @@ Every run returns `RunResult<S>` (`src/types.ts`):
 | `src/agent.ts` | OpenRouter provider, default model, research behaviour, `buildAgent` |
 | `src/engine.ts` | `run` (one row), `runTable` (a table), template fill, conditional gate, repair retry |
 | `src/cli.ts` | CLI front end: parse args, build the action, load rows, print results |
-| `src/schema.ts` | `jsonToZod` — turn a CLI JSON shape into the action's Zod `output` |
-| `src/index.ts` | runnable demo: enrich 3 company rows into a free-trial column |
+| `src/schema.ts` | `buildSchema` — turn a CLI JSON Schema / short form into the action's Zod `output` |
+| `tests/` | `bun test` suite: schema building, skip path, template fill; live test opt-in via `RUN_LIVE` |
 
 ## CLI
 

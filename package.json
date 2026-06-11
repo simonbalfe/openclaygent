@@ -3,14 +3,14 @@
   "version": "0.0.1",
   "description": "Open-source Claygent — a per-row web research agent. Brief in (target + prompt + schema), structured JSON out.",
   "type": "module",
-  "module": "src/index.ts",
+  "module": "src/cli.ts",
   "private": true,
   "bin": {
     "openclaygent": "src/cli.ts"
   },
   "scripts": {
     "cli": "bun run src/cli.ts",
-    "demo": "bun run src/index.ts",
+    "test": "bun test",
     "knip": "knip-bun",
     "typecheck": "tsc --noEmit"
   },

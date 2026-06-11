@@ -9,7 +9,7 @@ export interface RunOptions {
   maxOutputTokens?: number;
 }
 
-function fillTemplate(template: string, row: Row): { text: string; missing: string[] } {
+export function fillTemplate(template: string, row: Row): { text: string; missing: string[] } {
   const missing: string[] = [];
   const text = template.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_, key: string) => {
     const v = row[key];
