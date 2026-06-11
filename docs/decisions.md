@@ -5,7 +5,7 @@ they are recorded here so the next change does not pay it again.
 
 ## Mastra v1 tool signature: `(inputData)`, not `({ context })`
 
-In Mastra v1, a tool's `execute` receives the validated input as its **first argument**:
+In Mastra v1, a tool's `eadxecute` receives the validated input as its **first argument**:
 
 ```ts
 execute: async (inputData) => { /* inputData.query */ }

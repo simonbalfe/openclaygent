@@ -3,6 +3,61 @@
 openclaygent turns a natural-language research brief plus an output schema into a
 typed, cited JSON answer for each row of a table, by researching the live web.
 
+## Flow at a glance
+
+The action is fixed, the rows vary. An entry point builds the action, the engine runs it
+against each row, the agent does the web research, a structuring pass shapes the answer.
+
+```mermaid
+flowchart LR
+  CLI["CLI / demo<br/>(entry point)"] --> ACT["Action<br/>instructions · template · schema · skip rule"]
+  CLI --> ROWS["Row(s)<br/>company · domain · ..."]
+  ACT --> ENG
+  ROWS --> ENG
+  ENG["Engine<br/>run / runTable"] --> AG["Agent<br/>Mastra + OpenRouter"]
+  AG <-->|"web_search · fetch_page"| EXA["Exa"]
+  AG --> STR["Structuring model<br/>text → Zod schema"]
+  STR --> RR["RunResult<br/>result · sources · agentLog · tokens"]
+  RR --> ENG
+```
+
+## One row through `run`
+
+Each row passes the skip gate, gets its template filled, runs the agent loop, and is
+shaped into the schema — with one repair retry if the structured answer comes back empty.
+
+```mermaid
+flowchart TD
+  S(["run(action, row)"]) --> C{"conditionalRun<br/>passes?"}
+  C -- no --> SK["return skipped: true<br/>(0 tokens)"]
+  C -- yes --> F["fill template from row"]
+  F --> G["agent.generate<br/>(search / fetch loop)"]
+  G --> ST["structuring model → Zod"]
+  ST --> Q{"structured<br/>answer?"}
+  Q -- "no, attempt 1" --> N["re-ask with nudge"] --> G
+  Q -- "no, attempt 2" --> NULL["result = null"]
+  Q -- yes --> OK["result = object"]
+  OK --> OUT(["RunResult"])
+  NULL --> OUT
+  SK --> OUT
+```
+
+## Inside the agent loop
+
+The model decides each step: search the web, optionally read a page, then answer. Tools
+write every URL and step into the run's `Sink`.
+
+```mermaid
+flowchart LR
+  R["Reason"] --> D{"next action?"}
+  D -- web_search --> WS["Exa /search<br/>(inline contents)"] --> O["Observe"]
+  D -- fetch_page --> FP["Exa /contents<br/>(full page text)"] --> O
+  O --> R
+  D -- answer --> A["final text → structuring"]
+  WS -.->|"record url + step"| SINK[("Sink")]
+  FP -.-> SINK
+```
+
 ## The unit: an action
 
 An **action** (`src/types.ts`, `Action<S>`) is a reusable research brief. It mirrors
