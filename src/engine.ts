@@ -9,17 +9,37 @@ export interface RunOptions {
   maxOutputTokens?: number;
 }
 
+type Generated<S extends z.ZodType> = {
+  object?: z.infer<S>;
+  usage?: { inputTokens?: number; outputTokens?: number };
+};
+
+const RETRY_NUDGE =
+  "Your previous attempt returned no structured answer. Use what you found and return the JSON now.";
+
 export function fillTemplate(template: string, row: Row): { text: string; missing: string[] } {
   const missing: string[] = [];
   const text = template.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_, key: string) => {
-    const v = row[key];
-    if (v === undefined || v === null || v === "") {
+    const value = row[key];
+    if (value === undefined || value === null || value === "") {
       missing.push(key);
       return `[MISSING:${key}]`;
     }
-    return String(v);
+    return String(value);
   });
   return { text, missing };
+}
+
+function skippedResult<S extends z.ZodType>(model: string): RunResult<S> {
+  return {
+    result: null,
+    sources: [],
+    agentLog: [],
+    tokens: { input: 0, output: 0 },
+    durationMs: 0,
+    model,
+    skipped: true,
+  };
 }
 
 export async function run<S extends z.ZodType>(
@@ -28,57 +48,42 @@ export async function run<S extends z.ZodType>(
   opts: RunOptions = {},
 ): Promise<RunResult<S>> {
   const model = opts.model ?? DEFAULT_MODEL;
+  if (action.conditionalRun && !action.conditionalRun(row)) return skippedResult(model);
+
   const started = performance.now();
-
-  if (action.conditionalRun && !action.conditionalRun(row)) {
-    return {
-      result: null,
-      sources: [],
-      agentLog: [],
-      tokens: { input: 0, output: 0 },
-      durationMs: 0,
-      model,
-      skipped: true,
-    };
-  }
-
   const sink: Sink = { sources: new Set(), log: [] };
   const agent = buildAgent(sink, model);
+  const structuringModel = openrouter.chat(model);
   const { text, missing } = fillTemplate(action.template, row);
   if (missing.length) console.warn(`[${action.name}] row missing: ${missing.join(", ")}`);
 
-  let out: z.infer<S> | null = null;
-  let usage: { inputTokens?: number; outputTokens?: number } = {};
-  for (let attempt = 0; attempt < 2 && out === null; attempt++) {
-    const nudge =
-      attempt === 0
-        ? text
-        : `${text}\n\n(Your previous attempt returned no structured answer. Use what you found and return the JSON now.)`;
-    const res = await agent.generate(
+  let result: z.infer<S> | null = null;
+  let inputTokens = 0;
+  let outputTokens = 0;
+  for (let attempt = 0; attempt < 2 && result === null; attempt++) {
+    const prompt = attempt === 0 ? text : `${text}\n\n(${RETRY_NUDGE})`;
+    const res = (await agent.generate(
       [
         { role: "system", content: action.instructions },
-        { role: "user", content: nudge },
+        { role: "user", content: prompt },
       ],
       {
         maxSteps: opts.maxSteps ?? 5,
         modelSettings: { maxOutputTokens: opts.maxOutputTokens ?? 1500 },
-        structuredOutput: { schema: action.output, model: openrouter.chat(model) },
+        structuredOutput: { schema: action.output, model: structuringModel },
       },
-    );
-    out = (res as { object?: z.infer<S> }).object ?? null;
-    const u = (res as { usage?: { inputTokens?: number; outputTokens?: number } }).usage ?? {};
-    usage = {
-      inputTokens: (usage.inputTokens ?? 0) + (u.inputTokens ?? 0),
-      outputTokens: (usage.outputTokens ?? 0) + (u.outputTokens ?? 0),
-    };
+    )) as Generated<S>;
+    result = res.object ?? null;
+    inputTokens += res.usage?.inputTokens ?? 0;
+    outputTokens += res.usage?.outputTokens ?? 0;
   }
   sink.log.push({ type: "answer" });
 
   return {
-    result: out,
+    result,
     sources: [...sink.sources],
     agentLog: sink.log,
-    tokens: { input: usage.inputTokens ?? 0, output: usage.outputTokens ?? 0 },
+    tokens: { input: inputTokens, output: outputTokens },
     durationMs: Math.round(performance.now() - started),
     model,
   };

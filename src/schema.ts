@@ -7,45 +7,43 @@ const PRIMS: Record<string, () => z.ZodTypeAny> = {
   boolean: () => z.boolean(),
 };
 
+function parseSpec(spec: string): { parts: string[]; nullable: boolean } {
+  let s = spec.trim();
+  let nullable = s.endsWith("?");
+  if (nullable) s = s.slice(0, -1).trim();
+
+  const parts = s.split("|").map((p) => p.trim()).filter(Boolean);
+  if (parts.includes("null")) {
+    return { parts: parts.filter((p) => p !== "null"), nullable: true };
+  }
+  return { parts, nullable };
+}
+
+function baseType(parts: string[]): z.ZodTypeAny {
+  if (parts.length >= 2) return z.enum(parts as [string, ...string[]]);
+
+  const token = (parts[0] ?? "string").toLowerCase();
+  if (token.startsWith("enum:")) {
+    return z.enum(token.slice(5).split(",").map((t) => t.trim()) as [string, ...string[]]);
+  }
+  return PRIMS[token]?.() ?? z.string();
+}
+
 function fieldToZod(spec: unknown): z.ZodTypeAny {
   if (Array.isArray(spec)) return z.enum(spec.map(String) as [string, ...string[]]);
-
-  let s = String(spec).trim();
-  let nullable = false;
-  if (s.endsWith("?")) {
-    nullable = true;
-    s = s.slice(0, -1).trim();
-  }
-
-  let parts = s.split("|").map((p) => p.trim()).filter(Boolean);
-  if (parts.includes("null")) {
-    nullable = true;
-    parts = parts.filter((p) => p !== "null");
-  }
-
-  let base: z.ZodTypeAny;
-  if (parts.length >= 2) {
-    base = z.enum(parts as [string, ...string[]]);
-  } else {
-    const p = (parts[0] ?? "string").toLowerCase();
-    if (p.startsWith("enum:")) {
-      base = z.enum(p.slice(5).split(",").map((x) => x.trim()) as [string, ...string[]]);
-    } else {
-      base = PRIMS[p]?.() ?? z.string();
-    }
-  }
-
+  const { parts, nullable } = parseSpec(String(spec));
+  const base = baseType(parts);
   return nullable ? base.nullable() : base;
 }
 
 function jsonToZod(shape: Record<string, unknown>): z.ZodObject<Record<string, z.ZodTypeAny>> {
   const out: Record<string, z.ZodTypeAny> = {};
-  for (const [k, v] of Object.entries(shape)) out[k] = fieldToZod(v);
+  for (const [key, spec] of Object.entries(shape)) out[key] = fieldToZod(spec);
   return z.object(out);
 }
 
-function isJsonSchema(o: Record<string, unknown>): boolean {
-  return o.type === "object" || "properties" in o || "$schema" in o;
+function isJsonSchema(shape: Record<string, unknown>): boolean {
+  return shape.type === "object" || "properties" in shape || "$schema" in shape;
 }
 
 export function buildSchema(shape: Record<string, unknown>): z.ZodType {
