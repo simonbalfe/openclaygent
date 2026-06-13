@@ -1,7 +1,11 @@
+import { Readability, isProbablyReaderable } from "@mozilla/readability";
 import * as cheerio from "cheerio";
 import type { AnyNode, Element } from "domhandler";
+import { parseHTML } from "linkedom";
 import TurndownService from "turndown";
 import { gfm } from "turndown-plugin-gfm";
+
+const MIN_ARTICLE_CHARS = 250;
 
 const EXCLUDED_TAGS = "nav,footer,header,aside,script,style,form,iframe,noscript,svg,link,meta";
 const IMPORTANT_ATTRS = new Set([
@@ -137,6 +141,29 @@ function buildConverter(baseUrl?: string): TurndownService {
     bulletListMarker: "-",
   });
   td.use(gfm);
+  td.addRule("flattenLeftoverTables", {
+    filter: (node) => {
+      if (node.nodeName !== "TABLE") return false;
+      const q = node as unknown as { querySelector: (s: string) => { children: ArrayLike<{ nodeName: string }> } | null };
+      const firstRow = q.querySelector("tr");
+      if (!firstRow) return true;
+      const cells = Array.from(firstRow.children);
+      const hasHeadingRow = cells.length > 0 && cells.every((c) => c.nodeName === "TH");
+      return !hasHeadingRow;
+    },
+    replacement: (_content, node) => {
+      const rows = Array.from((node as Element & { querySelectorAll: (s: string) => ArrayLike<Element> }).querySelectorAll("tr"));
+      const lines = rows
+        .map((tr) =>
+          Array.from((tr as unknown as { children: ArrayLike<{ textContent?: string }> }).children)
+            .map((c) => (c.textContent ?? "").replace(/\s+/g, " ").trim())
+            .filter(Boolean)
+            .join(" · "),
+        )
+        .filter(Boolean);
+      return lines.length ? `\n\n${lines.join("\n")}\n\n` : "";
+    },
+  });
   td.addRule("dropImages", { filter: "img", replacement: () => "" });
   td.addRule("sameDomainLinks", {
     filter: "a",
@@ -156,7 +183,26 @@ function buildConverter(baseUrl?: string): TurndownService {
   return td;
 }
 
-export function htmlToMarkdown(html: string, baseUrl?: string): string {
+function tidy(markdown: string): string {
+  return markdown.replace(/\n{3,}/g, "\n\n").trim();
+}
+
+function readabilityMarkdown(html: string, baseUrl?: string): string | null {
+  try {
+    const { document } = parseHTML(html);
+    const doc = document as unknown as ConstructorParameters<typeof Readability>[0];
+    if (!isProbablyReaderable(doc)) return null;
+    const article = new Readability(doc).parse();
+    const content = article?.content;
+    if (!content) return null;
+    if ((article?.textContent ?? "").replace(/\s+/g, " ").trim().length < MIN_ARTICLE_CHARS) return null;
+    return tidy(buildConverter(baseUrl).turndown(content));
+  } catch {
+    return null;
+  }
+}
+
+function pruneMarkdown(html: string, baseUrl?: string): string {
   const $ = cheerio.load(html);
   $(EXCLUDED_TAGS).remove();
   const body = $("body").get(0);
@@ -164,7 +210,9 @@ export function htmlToMarkdown(html: string, baseUrl?: string): string {
   sanitize($);
   pruneTree($, body);
   promoteHeaderCells($);
+  return tidy(buildConverter(baseUrl).turndown($(body).html() ?? ""));
+}
 
-  const markdown = buildConverter(baseUrl).turndown($(body).html() ?? "");
-  return markdown.replace(/\n{3,}/g, "\n\n").trim();
+export function htmlToMarkdown(html: string, baseUrl?: string): string {
+  return readabilityMarkdown(html, baseUrl) ?? pruneMarkdown(html, baseUrl);
 }

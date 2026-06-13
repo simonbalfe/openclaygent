@@ -1,9 +1,20 @@
 import { createTool } from "@mastra/core/tools";
+import { extractText, getDocumentProxy } from "unpdf";
 import { z } from "zod";
 import { tavilyUsd } from "../core/cost.ts";
 import { htmlToMarkdown } from "./extract.ts";
 import { impit, tavilyClient } from "./providers.ts";
 import { clip, record, type Sink } from "./sink.ts";
+
+async function pdfToText(buf: ArrayBuffer): Promise<string> {
+  try {
+    const pdf = await getDocumentProxy(new Uint8Array(buf));
+    const { text } = await extractText(pdf, { mergePages: true });
+    return Array.isArray(text) ? text.join("\n") : text;
+  } catch {
+    return "";
+  }
+}
 
 const PAGE_CAP = 12000;
 const MIN_USABLE_CHARS = 200;
@@ -53,6 +64,7 @@ async function impitFetch(url: string): Promise<string> {
     const res = await impit.fetch(url);
     if (!res.ok) return "";
     const type = res.headers.get("content-type") ?? "";
+    if (type.includes("pdf") || url.toLowerCase().endsWith(".pdf")) return pdfToText(await res.arrayBuffer());
     if (type && !type.includes("html") && !type.includes("text")) return "";
     return htmlToMarkdown(await res.text(), url);
   } catch {

@@ -121,16 +121,33 @@ The tools remain the swap seam — the agent and engine are unaware of the provi
 ## Fetch: impit → patchright (direct → +Evomi → +CapSolver) → Tavily /extract
 
 `fetch_page` tries a local fetch first — `impit` (Chrome TLS fingerprint, so plain
-bot-checks pass) plus `src/tools/extract.ts`, a TypeScript port of Crawl4AI's
-`PruningContentFilter`: drop `nav/footer/header/aside/script/style/form/iframe/noscript`,
-then walk the DOM scoring each node (text density 0.4, link density 0.2, tag weight 0.2,
-class/id penalty 0.1, log-text-length 0.1) and prune below the fixed 0.48 threshold.
-Survivors convert to GFM markdown via Turndown (+gfm plugin) — headings, lists, and
-crucially tables, since pricing pages are tables. Images are dropped; same-domain links
-keep their hrefs so the agent can navigate the site, off-domain links flatten to text to
-save tokens. The cheap, self-hosted rungs always run first; only when every one of them
-fails `usable()` do we fall back to the one **paid** rung (Tavily `/extract`) as a last
-resort. The self-hosted rungs:
+bot-checks pass). A **PDF** response (`content-type: application/pdf` or `.pdf` URL) is parsed
+to text with `unpdf` instead of the HTML path — `extract.ts` is HTML-only, so without this a
+PDF returned nothing.
+
+HTML is turned into markdown by `src/tools/extract.ts`, **Readability-first with a prune
+fallback** — because a research agent hits both articles *and* structured pages:
+
+1. **Mozilla Readability** (`@mozilla/readability` over a `linkedom` DOM, gated by
+   `isProbablyReaderable`) handles the article/blog/news slice — it locks onto the main
+   content container and strips related-posts/sidebars/comments cleanly. Used only when the
+   page looks like an article and yields ≥ `MIN_ARTICLE_CHARS`; any failure falls through.
+2. Otherwise the **Crawl4AI `PruningContentFilter` port** runs (the generic path for
+   pricing/docs/listings/dashboards): drop `nav/footer/header/aside/script/style/form/iframe/
+   noscript`, then score each node (text density 0.4, link density 0.2, tag weight 0.2,
+   class/id penalty 0.1, log-text-length 0.1) and prune below 0.48. Readability alone would
+   be wrong here — it discards anything that isn't article prose, i.e. exactly the tables you
+   want.
+
+Both paths finish through Turndown (+gfm): headings, lists, and tables (pricing pages are
+tables). A leftover-table rule flattens any table gfm can't convert (no heading row — e.g.
+Wikipedia infoboxes) to ` · `-joined text, so raw `<table>` HTML never leaks into the output.
+Images are dropped; same-domain links keep their hrefs for navigation, off-domain links
+flatten to text to save tokens.
+
+The cheap, self-hosted rungs always run first; only when every one of them fails `usable()`
+do we fall back to the one **paid** rung (Tavily `/extract`) as a last resort. The
+self-hosted rungs:
 
 1. **impit** — browser-TLS HTTP, free, default.
 2. **patchright direct** — when impit fails `usable()` (under 200 chars, or under 3000 chars

@@ -111,8 +111,9 @@ is recorded without global state:
   Tavily (`TAVILY_API_KEY`). A rung is skipped when its env is unset and the ladder
   escalates when a rung throws or returns zero results; the winning rung is recorded as
   `via` on the step. Returns title/url/snippet. Snippets are usually enough to answer.
-- `fetch_page(urls)` — impit (browser-TLS HTTP) + the pruning extractor
-  (`src/tools/extract.ts`, see decisions.md) renders the page as markdown for free; when
+- `fetch_page(urls)` — impit (browser-TLS HTTP) + the extractor
+  (`src/tools/extract.ts`: Readability-first, Crawl4AI prune fallback — see decisions.md)
+  renders the page as markdown for free; PDFs are parsed to text via `unpdf`. When
   the result looks like a JS shell or block page it escalates to the **patchright** compose
   service (`PATCHRIGHT_URL`, real rendered Chrome — see decisions.md), recorded as
   `via: patchright` in the step. When every self-hosted rung fails, one paid rung runs last —
@@ -150,7 +151,7 @@ Every run returns `RunResult<S>` (`src/core/types.ts`):
 | `src/tools/fetch.ts` | `fetch_page` tool (impit→patchright→Tavily /extract ladder), `usable` shell-page guard |
 | `src/tools/providers.ts` | shared external clients: the `impit` instance, lazy `exaClient`, lazy `tavilyClient` |
 | `src/tools/sink.ts` | the per-run `Sink` (sources, agent log, cost, `onStep`) + `record`/`clip` helpers, shared by every tool |
-| `src/tools/extract.ts` | pruning extractor — Crawl4AI-port scoring + Turndown GFM render |
+| `src/tools/extract.ts` | HTML→markdown: Readability-first (article/blog) → Crawl4AI-prune fallback (structured pages) → Turndown GFM (leftover non-data tables flattened) |
 | `src/tools/linkedin.ts` | `linkedin_profile` / `linkedin_posts` / `linkedin_post_reactions` / `linkedin_find_people` / `linkedin_company` (Apify HarvestAPI actors; registered only when `APIFY_API_TOKEN` is set) |
 | `src/core/agent.ts` | per-run cost-tapped OpenRouter provider (`buildOpenRouter`), default model, research behaviour, `buildAgent` |
 | `src/core/cost.ts` | `CostAccumulator` + `emptyCost`, Tavily credit→USD rate, `extractCostUsd` (reads `usage.cost` from JSON or SSE OpenRouter responses) |
