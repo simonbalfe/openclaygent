@@ -57,7 +57,6 @@ async function patchrightFetch(
   const q = new URLSearchParams({ url });
   if (opts.proxy) q.set("proxy", "1");
   if (opts.solve) q.set("solve", "1");
-  // Solving polls CapSolver (can take 30-60s) — give it room.
   const timeout = opts.solve ? 120000 : 45000;
   try {
     const res = await fetch(`${base}/fetch?${q}`, { signal: AbortSignal.timeout(timeout) });

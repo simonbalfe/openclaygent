@@ -39,7 +39,6 @@ function stickySession() {
       username: EVOMI.user,
       password: `${EVOMI.pass}_session-${id}`,
     },
-    // CapSolver proxy string: host:port:user:pass
     capStr: `${EVOMI.gateway}:${EVOMI.user}:${EVOMI.pass}_session-${id}`,
   };
 }
@@ -163,18 +162,15 @@ async function render(target, { useProxy, solve }) {
     let page = await context.newPage();
     await page.goto(target, { waitUntil: "domcontentloaded", timeout: 30000 });
     await page.waitForLoadState("networkidle", { timeout: 10000 }).catch(() => {});
-    // Passive interstitials auto-resolve — wait them out first.
     for (let i = 0; i < 4 && CHALLENGE.test(await page.title().catch(() => "")); i++) {
       await page.waitForTimeout(2500);
     }
     let html = await page.content();
 
-    // Embedded Turnstile widget (not a full interstitial) → click it, then CapSolver token.
     if (solve && TURNSTILE_SITEKEY.test(html) && !CHALLENGE.test(html)) {
       html = await solveTurnstile(page, target, html);
     }
 
-    // Still challenged and solving is enabled → hand the page to CapSolver.
     if (solve && sess && CAPSOLVER_KEY && CHALLENGE.test(html)) {
       const sol = await capsolve(target, sess.capStr);
       const cookies = sol.cookies || {};

@@ -54,6 +54,7 @@ the gap it closes (vs Clay's Claygent and the Ferret reference).
 - [~] CapSolver interstitial rung — `&solve=1` `AntiCloudflareTask` + sticky Evomi session for full-page CF challenges (`just a moment`), `via: patchright+solver`. Wired; unproven for G2's DataDome (a different wall, not CF Turnstile)
 - [x] Paid content fallback — last-resort Exa `/contents` then Tavily `/extract` when every self-hosted fetch rung fails `usable()`; cracks walled aggregators from Exa's cache. Mechanism in `decisions.md` (Fetch ladder)
 - [x] Search provider cascade — SearXNG (free) → Exa → Tavily ladder, escalating on error or zero results. Mechanism in `decisions.md` (Search ladder). Tier-aware rung selection still waits on depth tiers
+- [ ] Wire the solver to fire on gated-but-loaded pages — today `fetch_page` only escalates to `&solve=1` when an earlier rung fails `usable()`; a page whose shell loads but hides data behind an unsolved `cf-turnstile` widget never reaches the (working) Turnstile rung. Make `usable()` also fail on a present-but-unsolved widget so the solver triggers in real runs
 - [ ] Enrichment tool — `enrich(provider, input)` for structured GTM data (LinkedIn, tech-stack, jobs) as a waterfall step
 
 ## Scale & ops
