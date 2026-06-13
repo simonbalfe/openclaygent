@@ -1,6 +1,6 @@
 import { runTable, type RunOptions } from "./engine.ts";
 import { buildSchema } from "./schema.ts";
-import { defineAction, type AgentStep, type Row, type RunResult } from "./types.ts";
+import { defineAction, type AgentStep, type Row, type RunCost, type RunResult } from "./types.ts";
 import type { z } from "zod";
 
 const HELP = `openclaygent — per-row web-research agent
@@ -130,7 +130,20 @@ function formatStep(s: AgentStep, detailed = false): string[] {
   } else {
     lines.push("answer");
   }
+  if (s.cost && lines[0]) lines[0] += ` · ${money(s.cost)}`;
   return lines;
+}
+
+function money(n: number): string {
+  return `$${n.toFixed(4)}`;
+}
+
+function costBreakdown(c: RunCost): string {
+  const parts = [`LLM ${money(c.llm)}`];
+  if (c.byProvider.exa > 0) parts.push(`exa ${money(c.byProvider.exa)}`);
+  if (c.byProvider.apify > 0) parts.push(`apify ${money(c.byProvider.apify)}`);
+  if (c.byProvider.tavily > 0) parts.push(`tavily ${money(c.byProvider.tavily)} (${c.tavilyCredits}c)`);
+  return parts.join(" · ");
 }
 
 function printRow(label: string, r: RunResult<z.ZodType>, showSteps: boolean): void {
@@ -139,8 +152,9 @@ function printRow(label: string, r: RunResult<z.ZodType>, showSteps: boolean): v
     console.log(`${label}  (skipped)`);
     return;
   }
-  const stats = `${(r.durationMs / 1000).toFixed(1)}s · ${r.tokens.input} in / ${r.tokens.output} out tok · ${r.sources.length} sources`;
+  const stats = `${(r.durationMs / 1000).toFixed(1)}s · ${money(r.cost.total)} · ${r.tokens.input} in / ${r.tokens.output} out tok · ${r.sources.length} sources`;
   console.log(`${label}  ${stats}`);
+  if (r.cost.tools > 0) console.log(`  cost  ${costBreakdown(r.cost)}`);
   if (showSteps) for (const s of r.agentLog) for (const line of formatStep(s)) console.log(`  ${line}`);
   if (r.result === null || typeof r.result !== "object") {
     console.log(`  ${r.result === null ? "no result" : String(r.result)}`);
@@ -209,10 +223,16 @@ if (flags.json) {
     printRow(Object.values(row)[0]?.toString() ?? `row ${i + 1}`, results[i]!, !flags.verbose),
   );
   const totals = results.reduce(
-    (acc, r) => ({ input: acc.input + r.tokens.input, output: acc.output + r.tokens.output }),
-    { input: 0, output: 0 },
+    (acc, r) => ({
+      input: acc.input + r.tokens.input,
+      output: acc.output + r.tokens.output,
+      cost: acc.cost + r.cost.total,
+    }),
+    { input: 0, output: 0, cost: 0 },
   );
-  console.log(`\n${rows.length} rows · ${totals.input} in / ${totals.output} out tok · ${results[0]?.model}`);
+  console.log(
+    `\n${rows.length} rows · ${money(totals.cost)} · ${totals.input} in / ${totals.output} out tok · ${results[0]?.model}`,
+  );
 }
 
 if (typeof flags.out === "string") {

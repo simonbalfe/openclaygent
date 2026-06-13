@@ -21,8 +21,12 @@ tool's side effects (recorded sources/steps) never happen.
 `structuredOutput` must be passed `{ schema, model }` with its **own** model:
 
 ```ts
-structuredOutput: { schema: action.output, model: openrouter.chat(model) }
+structuredOutput: { schema: action.output, model: provider.chat(model) }
 ```
+
+The structuring model comes from the **same per-run OpenRouter provider** as the agent
+(`buildAgent` returns `{ agent, provider }`), so the cost-tap (see Cost accounting) meters
+the structuring call too.
 
 Passing only `{ schema }` forces a single structured generation pass that **disables
 tool-calling**. The agent then answers from parametric memory and never searches. The
@@ -65,9 +69,35 @@ specific behaviour and small.
 
 ## Per-run tools and the Sink
 
-Tools are built fresh inside each `run` and closed over a `Sink` (`{ sources, log }`)
-rather than reading/writing module-level state. This keeps concurrent runs isolated and
-lets `RunResult` report exactly the URLs and steps that this run produced.
+Tools are built fresh inside each `run` and closed over a `Sink`
+(`{ sources, log, cost, onStep? }`) rather than reading/writing module-level state. This
+keeps concurrent runs isolated and lets `RunResult` report exactly the URLs, steps, and
+spend that this run produced. `sink.cost` (`CostAccumulator` in `src/cost.ts`) is the
+single place every provider's spend lands during a run.
+
+## Cost accounting: exact per-provider, no estimates
+
+`RunResult.cost` (`RunCost` in `src/types.ts`) reports real dollars, not a price-table
+guess. Every figure comes from the provider's own reporting. Each paid tool step also
+carries its own USD on `agentLog[].cost`; self-hosted rungs (SearXNG, impit, patchright)
+are $0.
+
+- **OpenRouter (LLM)** — the per-run provider (`buildOpenRouter`, `src/agent.ts`) is
+  created with `extraBody: { usage: { include: true } }` and a `fetch` wrapper (`tapCost`)
+  that reads `usage.cost` off **every** response and adds it to `sink.cost.openrouter`.
+  This is why the provider is per-run and shared by both the agent and the structuring
+  model: the tap is the only thing that sees the separate structuring call, which is **not**
+  in `res.steps` — summing step costs would silently undercount. Responses are JSON or SSE
+  (`text/event-stream`); `extractCostUsd` handles both (regex the last `"cost":` in a
+  stream, `usage.cost` in JSON). The tap reads `res.clone()` so Mastra still gets the body.
+- **Exa** — `costDollars.total` on every `search`/`getContents` response (exact USD).
+- **Apify** — the run's `usageTotalUsd`. The sync `run-sync-get-dataset-items` endpoint
+  returns only dataset items (no run id, no cost), so `runActor` (`src/tools/linkedin.ts`)
+  uses the async pattern instead: start the run, poll `actor-runs/{id}?waitForFinish=30`
+  until terminal, then read `usageTotalUsd` and fetch the dataset items.
+- **Tavily** — `includeUsage: true` returns exact `usage.credits` (Tavily bills in credits,
+  never dollars). USD = `credits × TAVILY_USD_PER_CREDIT` (env, default `0.008` = the PAYG
+  rate); `tavilyCredits` is also kept on `RunCost` so the raw credit count survives.
 
 ## Search: SearXNG → Exa → Tavily ladder
 

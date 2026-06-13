@@ -25,6 +25,15 @@ export interface AgentStep {
   via?: string;
   resultCount?: number;
   results?: StepResult[];
+  cost?: number;
+}
+
+export interface RunCost {
+  total: number;
+  llm: number;
+  tools: number;
+  byProvider: { openrouter: number; exa: number; apify: number; tavily: number };
+  tavilyCredits: number;
 }
 
 export interface RunResult<S extends z.ZodType> {
@@ -32,6 +41,7 @@ export interface RunResult<S extends z.ZodType> {
   sources: string[];
   agentLog: AgentStep[];
   tokens: { input: number; output: number };
+  cost: RunCost;
   durationMs: number;
   model: string;
   skipped?: boolean;

@@ -14,7 +14,7 @@ across a whole list, cheaply, on bring-your-own keys.
 input:   action (instructions + {{templated inputs}} + Zod output schema) + a row
 agent:   Mastra agent on an OpenRouter model
 tools:   web_search  ·  fetch_page          ← search snippets first, read pages only if needed
-output:  { result, sources, agentLog, tokens, durationMs, model }
+output:  { result, sources, agentLog, tokens, cost, durationMs, model }
 ```
 
 - **One key, any model** — OpenRouter spine (DeepSeek default; swap to Claude/GPT/Llama per run).
@@ -65,6 +65,9 @@ What you get back is the **typed, cited** `RunResult` (values illustrative):
   "sources":  ["https://linear.app", "https://linear.app/about"],
   "agentLog": [ /* the search → fetch → answer steps above, each with result previews */ ],
   "tokens":   { "input": 3140, "output": 88 },
+  "cost":     { "total": 0.0021, "llm": 0.0021, "tools": 0,
+                "byProvider": { "openrouter": 0.0021, "exa": 0, "apify": 0, "tavily": 0 },
+                "tavilyCredits": 0 },
   "durationMs": 7421,
   "model":    "deepseek/deepseek-chat"
 }
@@ -73,14 +76,14 @@ What you get back is the **typed, cited** `RunResult` (values illustrative):
 On the CLI that prints as:
 
 ```
-Linear  7.4s · 3140 in / 88 out tok · 2 sources
+Linear  7.4s · $0.0021 · 3140 in / 88 out tok · 2 sources
   search    "Linear linear.app product industry" [searxng] → 5 results
   fetch     https://linear.app [impit] → 4812 chars
   answer
   industry    Project management & software development tools
   confidence  high
 
-1 rows · 3140 in / 88 out tok · deepseek/deepseek-chat
+1 rows · $0.0021 · 3140 in / 88 out tok · deepseek/deepseek-chat
 ```
 
 Run the **same action** over a 500-row CSV and you get one of these per row — the brief is
@@ -133,7 +136,7 @@ bun run cli -- --json \
   --schema '{"free_trial":"boolean","evidence_url":"string?","confidence":"low|medium|high"}' \
   --input company=Linear --input domain=linear.app
 # → { "result": { "free_trial": true, "evidence_url": "https://linear.app/pricing", ... },
-#     "sources": [...], "tokens": {...}, "model": "deepseek/deepseek-chat" }
+#     "sources": [...], "tokens": {...}, "cost": {...}, "model": "deepseek/deepseek-chat" }
 ```
 
 Batch the same way — `--rows leads.csv --out enriched.json` — and the agent hands you one

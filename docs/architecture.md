@@ -17,7 +17,7 @@ flowchart LR
   ENG["Engine<br/>run / runTable"] --> AG["Agent<br/>Mastra + OpenRouter"]
   AG <-->|"web_search · fetch_page"| EXA["SearXNG · Exa · Tavily"]
   AG --> STR["Structuring model<br/>text → Zod schema"]
-  STR --> RR["RunResult<br/>result · sources · agentLog · tokens"]
+  STR --> RR["RunResult<br/>result · sources · agentLog · tokens · cost"]
   RR --> ENG
 ```
 
@@ -94,7 +94,7 @@ fixed, the row varies.
 5. **Repair retry** — if the structured answer is null, re-ask once with a nudge. See
    `decisions.md`.
 6. **Return the contract** — `RunResult<S>`: `result`, `sources`, `agentLog`, `tokens`,
-   `durationMs`, `model`.
+   `cost`, `durationMs`, `model`.
 
 `runTable(action, rows, opts)` runs the loop across a whole table, returning one
 `RunResult` per row.
@@ -131,8 +131,11 @@ Every run returns `RunResult<S>` (`src/types.ts`):
 - `sources` — every URL the tools touched.
 - `agentLog` — ordered `AgentStep[]`, the replay log of search/fetch/answer steps. Each
   step carries `results: StepResult[]` — what the tool actually returned (title, URL,
-  preview snippet, fetched char count) — so a run is auditable after the fact.
-- `tokens`, `durationMs`, `model` — cost and provenance.
+  preview snippet, fetched char count) — and `cost` (USD for that paid tool step) — so a
+  run is auditable after the fact.
+- `cost` — `RunCost`: exact spend for the run, `{ total, llm, tools, byProvider, tavilyCredits }`,
+  all real provider figures (never estimated). Mechanism in `decisions.md` (Cost accounting).
+- `tokens`, `durationMs`, `model` — usage and provenance.
 
 ## File map
 
@@ -142,8 +145,9 @@ Every run returns `RunResult<S>` (`src/types.ts`):
 | `src/tools/web.ts` | `web_search` (SearXNG→Exa→Tavily ladder) + `fetch_page` (impit→patchright→Exa /contents→Tavily /extract ladder), the per-run `Sink` |
 | `src/tools/extract.ts` | pruning extractor — Crawl4AI-port scoring + Turndown GFM render |
 | `src/tools/linkedin.ts` | `linkedin_profile` / `linkedin_posts` / `linkedin_post_reactions` / `linkedin_find_people` / `linkedin_company` (Apify HarvestAPI actors; registered only when `APIFY_API_TOKEN` is set) |
-| `src/agent.ts` | OpenRouter provider, default model, research behaviour, `buildAgent` |
-| `src/engine.ts` | `run` (one row), `runTable` (a table), template fill, conditional gate, repair retry |
+| `src/agent.ts` | per-run cost-tapped OpenRouter provider (`buildOpenRouter`), default model, research behaviour, `buildAgent` |
+| `src/cost.ts` | `CostAccumulator` + `emptyCost`, Tavily credit→USD rate, `extractCostUsd` (reads `usage.cost` from JSON or SSE OpenRouter responses) |
+| `src/engine.ts` | `run` (one row), `runTable` (a table), template fill, conditional gate, repair retry, `RunCost` assembly |
 | `src/cli.ts` | CLI front end: parse args, build the action, load rows, print results |
 | `src/schema.ts` | `buildSchema` — turn a CLI JSON Schema / short form into the action's Zod `output` |
 | `tests/` | `bun test` suite: schema building, skip path, template fill, extractor, search ladder; live test opt-in via `RUN_LIVE` |

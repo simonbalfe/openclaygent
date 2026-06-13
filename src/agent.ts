@@ -1,11 +1,33 @@
 import { Agent } from "@mastra/core/agent";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
+import { type CostAccumulator, extractCostUsd } from "./cost.ts";
 import { linkedinTools } from "./tools/linkedin.ts";
 import { webTools, type Sink } from "./tools/web.ts";
 
-export const openrouter = createOpenRouter({ apiKey: process.env.OPENROUTER_API_KEY ?? "" });
-
 export const DEFAULT_MODEL = process.env.OPENCLAY_MODEL ?? "deepseek/deepseek-chat";
+
+function tapCost(cost: CostAccumulator): typeof fetch {
+  const tapped = async (
+    input: Parameters<typeof fetch>[0],
+    init?: Parameters<typeof fetch>[1],
+  ): Promise<Response> => {
+    const res = await fetch(input, init);
+    try {
+      const body = await res.clone().text();
+      cost.openrouter += extractCostUsd(res.headers.get("content-type") ?? "", body);
+    } catch {}
+    return res;
+  };
+  return Object.assign(tapped, { preconnect: globalThis.fetch.preconnect }) as typeof fetch;
+}
+
+export function buildOpenRouter(cost: CostAccumulator) {
+  return createOpenRouter({
+    apiKey: process.env.OPENROUTER_API_KEY ?? "",
+    extraBody: { usage: { include: true } },
+    fetch: tapCost(cost),
+  });
+}
 
 const BEHAVIOUR = [
   "You are a precise web-research agent enriching one row of a data table.",
@@ -55,16 +77,21 @@ const BEHAVIOUR = [
   "task's rules win.",
 ].join("\n");
 
-export function buildAgent(sink: Sink, model: string = DEFAULT_MODEL): Agent {
+export function buildAgent(
+  sink: Sink,
+  model: string = DEFAULT_MODEL,
+): { agent: Agent; provider: ReturnType<typeof buildOpenRouter> } {
+  const provider = buildOpenRouter(sink.cost);
   const tools = {
     ...webTools(sink),
     ...(process.env.APIFY_API_TOKEN ? linkedinTools(sink) : {}),
   };
-  return new Agent({
+  const agent = new Agent({
     id: `openclaygent-${model.replace(/[^a-z0-9]/gi, "-")}`,
     name: "openclaygent",
     instructions: BEHAVIOUR,
-    model: openrouter.chat(model),
+    model: provider.chat(model),
     tools,
   });
+  return { agent, provider };
 }

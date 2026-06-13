@@ -4,19 +4,35 @@ import { clip, record, type Sink } from "./web.ts";
 
 const APIFY = "https://api.apify.com/v2";
 
-async function runActor<T>(actor: string, input: unknown): Promise<T[]> {
+interface ApifyRun {
+  id: string;
+  status: string;
+  defaultDatasetId: string;
+  usageTotalUsd?: number;
+}
+
+async function runActor<T>(actor: string, input: unknown): Promise<{ items: T[]; usd: number }> {
   const token = process.env.APIFY_API_TOKEN;
   if (!token) throw new Error("APIFY_API_TOKEN is not set");
-  const res = await fetch(
-    `${APIFY}/acts/${actor}/run-sync-get-dataset-items?token=${token}&timeout=120`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(input),
-    },
-  );
-  if (!res.ok) throw new Error(`Apify ${actor} ${res.status}: ${(await res.text()).slice(0, 300)}`);
-  return res.json() as Promise<T[]>;
+  const start = await fetch(`${APIFY}/acts/${actor}/runs?token=${token}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!start.ok) throw new Error(`Apify ${actor} ${start.status}: ${(await start.text()).slice(0, 300)}`);
+  let run = ((await start.json()) as { data: ApifyRun }).data;
+
+  const deadline = Date.now() + 150_000;
+  while (run.status === "READY" || run.status === "RUNNING") {
+    if (Date.now() > deadline) throw new Error(`Apify ${actor} timed out (run ${run.id})`);
+    const poll = await fetch(`${APIFY}/actor-runs/${run.id}?token=${token}&waitForFinish=30`);
+    if (!poll.ok) throw new Error(`Apify ${actor} poll ${poll.status}: ${(await poll.text()).slice(0, 300)}`);
+    run = ((await poll.json()) as { data: ApifyRun }).data;
+  }
+
+  const itemsRes = await fetch(`${APIFY}/datasets/${run.defaultDatasetId}/items?token=${token}`);
+  if (!itemsRes.ok) throw new Error(`Apify ${actor} items ${itemsRes.status}`);
+  return { items: (await itemsRes.json()) as T[], usd: run.usageTotalUsd ?? 0 };
 }
 
 interface RawProfile {
@@ -95,7 +111,8 @@ export function linkedinTools(sink: Sink) {
     }),
     outputSchema: z.object({ profile: z.unknown() }),
     execute: async ({ url }) => {
-      const items = await runActor<RawProfile>("harvestapi~linkedin-profile-scraper", { url });
+      const { items, usd } = await runActor<RawProfile>("harvestapi~linkedin-profile-scraper", { url });
+      sink.cost.apify += usd;
       const p = items[0];
       const profile = p && {
         name: [p.firstName, p.lastName].filter(Boolean).join(" "),
@@ -120,6 +137,7 @@ export function linkedinTools(sink: Sink) {
         results: profile
           ? [{ title: profile.name, url: profile.linkedinUrl, preview: clip(profile.headline) }]
           : [],
+        cost: usd,
       });
       return { profile: profile ?? null };
     },
@@ -135,10 +153,11 @@ export function linkedinTools(sink: Sink) {
     }),
     outputSchema: z.object({ posts: z.array(z.unknown()) }),
     execute: async ({ profileUrl, maxPosts }) => {
-      const items = await runActor<RawPost>("harvestapi~linkedin-profile-posts", {
+      const { items, usd } = await runActor<RawPost>("harvestapi~linkedin-profile-posts", {
         targetUrls: [profileUrl],
         maxPosts,
       });
+      sink.cost.apify += usd;
       const posts = items.slice(0, maxPosts).map((p) => ({
         url: p.linkedinUrl ?? "",
         postedAt: p.postedAt?.date ?? p.postedAt?.postedAgoText ?? "",
@@ -153,6 +172,7 @@ export function linkedinTools(sink: Sink) {
         query: `posts:${profileUrl}`,
         resultCount: posts.length,
         results: posts.map((p) => ({ url: p.url, preview: clip(p.text) })),
+        cost: usd,
       });
       return { posts };
     },
@@ -168,10 +188,11 @@ export function linkedinTools(sink: Sink) {
     }),
     outputSchema: z.object({ reactions: z.array(z.unknown()) }),
     execute: async ({ postUrl, maxReactions }) => {
-      const items = await runActor<RawReaction>("harvestapi~linkedin-post-reactions", {
+      const { items, usd } = await runActor<RawReaction>("harvestapi~linkedin-post-reactions", {
         posts: [postUrl],
         maxItems: maxReactions,
       });
+      sink.cost.apify += usd;
       const reactions = items.slice(0, maxReactions).map((r) => ({
         type: r.reactionType ?? "",
         name: r.actor?.name ?? "",
@@ -187,6 +208,7 @@ export function linkedinTools(sink: Sink) {
           url: r.linkedinUrl,
           preview: clip(`${r.type} · ${r.position}`),
         })),
+        cost: usd,
       });
       return { reactions };
     },
@@ -213,13 +235,14 @@ export function linkedinTools(sink: Sink) {
     }),
     outputSchema: z.object({ people: z.array(z.unknown()) }),
     execute: async ({ company, jobTitles, searchQuery, maxItems, findEmails }) => {
-      const items = await runActor<RawEmployee>("harvestapi~linkedin-company-employees", {
+      const { items, usd } = await runActor<RawEmployee>("harvestapi~linkedin-company-employees", {
         companies: [company],
         ...(jobTitles?.length ? { jobTitles } : {}),
         ...(searchQuery ? { searchQuery } : {}),
         maxItems,
         profileScraperMode: findEmails ? "Full + email search ($12 per 1k)" : "Short ($4 per 1k)",
       });
+      sink.cost.apify += usd;
       const people = items.slice(0, maxItems).map((p) => {
         const current = p.currentPositions?.find((cp) => cp.current) ?? p.currentPositions?.[0];
         return {
@@ -240,6 +263,7 @@ export function linkedinTools(sink: Sink) {
         query: `people:${company}`,
         resultCount: people.length,
         results: people.map((p) => ({ title: p.name, url: p.linkedinUrl, preview: clip(p.title) })),
+        cost: usd,
       });
       return { people };
     },
@@ -259,9 +283,10 @@ export function linkedinTools(sink: Sink) {
     outputSchema: z.object({ company: z.unknown() }),
     execute: async ({ company }) => {
       const isUrl = /linkedin\.com\/company\//i.test(company);
-      const items = await runActor<RawCompany>("harvestapi~linkedin-company", {
+      const { items, usd } = await runActor<RawCompany>("harvestapi~linkedin-company", {
         ...(isUrl ? { companies: [company] } : { searches: [company] }),
       });
+      sink.cost.apify += usd;
       const c = items[0];
       const hq = c?.locations?.find((l) => l.headquarter) ?? c?.locations?.[0];
       const range = c?.employeeCountRange;
@@ -290,6 +315,7 @@ export function linkedinTools(sink: Sink) {
         results: profile
           ? [{ title: profile.name, url: profile.linkedinUrl, preview: clip(profile.industry) }]
           : [],
+        cost: usd,
       });
       return { company: profile ?? null };
     },

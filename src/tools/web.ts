@@ -3,6 +3,7 @@ import { createTool } from "@mastra/core/tools";
 import Exa from "exa-js";
 import { Impit } from "impit";
 import { z } from "zod";
+import { type CostAccumulator, tavilyUsd } from "../cost.ts";
 import type { AgentStep } from "../types.ts";
 import { htmlToMarkdown } from "./extract.ts";
 
@@ -79,29 +80,33 @@ async function impitFetch(url: string): Promise<string> {
   }
 }
 
-async function exaContentsFetch(url: string): Promise<string> {
+async function exaContentsFetch(url: string): Promise<{ text: string; usd: number }> {
   const client = exaClient();
-  if (!client) return "";
+  if (!client) return { text: "", usd: 0 };
   try {
     const data = await client.getContents(url, {
       text: { maxCharacters: PAGE_CAP },
       livecrawl: "fallback",
       livecrawlTimeout: 12000,
     });
-    return data.results[0]?.text ?? "";
+    return { text: data.results[0]?.text ?? "", usd: data.costDollars?.total ?? 0 };
   } catch {
-    return "";
+    return { text: "", usd: 0 };
   }
 }
 
-async function tavilyExtractFetch(url: string): Promise<string> {
+async function tavilyExtractFetch(url: string): Promise<{ text: string; credits: number }> {
   const client = tavilyClient();
-  if (!client) return "";
+  if (!client) return { text: "", credits: 0 };
   try {
-    const data = await client.extract([url], { extractDepth: "advanced", format: "markdown" });
-    return data.results[0]?.rawContent ?? "";
+    const data = await client.extract([url], {
+      extractDepth: "advanced",
+      format: "markdown",
+      includeUsage: true,
+    });
+    return { text: data.results[0]?.rawContent ?? "", credits: data.usage?.credits ?? 0 };
   } catch {
-    return "";
+    return { text: "", credits: 0 };
   }
 }
 
@@ -109,6 +114,7 @@ export interface Sink {
   sources: Set<string>;
   log: AgentStep[];
   onStep?: (step: AgentStep) => void;
+  cost: CostAccumulator;
 }
 
 export function record(sink: Sink, step: AgentStep): void {
@@ -143,7 +149,18 @@ async function searxngSearch(baseUrl: string, query: string, n: number): Promise
   }));
 }
 
-async function exaSearch(query: string, n: number): Promise<SearchResult[]> {
+interface RungResult {
+  results: SearchResult[];
+  exaUsd: number;
+  tavilyCredits: number;
+}
+
+async function searxngRung(query: string, n: number): Promise<RungResult> {
+  const results = await searxngSearch(process.env.SEARXNG_URL!, query, n);
+  return { results, exaUsd: 0, tavilyCredits: 0 };
+}
+
+async function exaSearch(query: string, n: number): Promise<RungResult> {
   const client = exaClient();
   if (!client) throw new Error("EXA_API_KEY is not set");
   const data = await client.searchAndContents(query, {
@@ -151,36 +168,34 @@ async function exaSearch(query: string, n: number): Promise<SearchResult[]> {
     numResults: n,
     text: { maxCharacters: 1200 },
   });
-  return data.results.map((r) => ({
+  const results = data.results.map((r) => ({
     title: r.title ?? "",
     url: r.url,
     content: r.text ?? "",
   }));
+  return { results, exaUsd: data.costDollars?.total ?? 0, tavilyCredits: 0 };
 }
 
-async function tavilySearch(query: string, n: number): Promise<SearchResult[]> {
+async function tavilySearch(query: string, n: number): Promise<RungResult> {
   const client = tavilyClient();
   if (!client) throw new Error("TAVILY_API_KEY is not set");
-  const data = await client.search(query, { maxResults: n });
-  return data.results.slice(0, n).map((r) => ({
+  const data = await client.search(query, { maxResults: n, includeUsage: true });
+  const results = data.results.slice(0, n).map((r) => ({
     title: r.title ?? "",
     url: r.url,
     content: r.content ?? "",
   }));
+  return { results, exaUsd: 0, tavilyCredits: data.usage?.credits ?? 0 };
 }
 
 interface SearchRung {
   name: string;
   enabled: () => boolean;
-  search: (query: string, n: number) => Promise<SearchResult[]>;
+  search: (query: string, n: number) => Promise<RungResult>;
 }
 
 const SEARCH_LADDER: SearchRung[] = [
-  {
-    name: "searxng",
-    enabled: () => Boolean(process.env.SEARXNG_URL),
-    search: (q, n) => searxngSearch(process.env.SEARXNG_URL!, q, n),
-  },
+  { name: "searxng", enabled: () => Boolean(process.env.SEARXNG_URL), search: searxngRung },
   { name: "exa", enabled: () => Boolean(process.env.EXA_API_KEY), search: exaSearch },
   { name: "tavily", enabled: () => Boolean(process.env.TAVILY_API_KEY), search: tavilySearch },
 ];
@@ -188,20 +203,20 @@ const SEARCH_LADDER: SearchRung[] = [
 export async function searchWeb(
   query: string,
   n: number,
-): Promise<{ results: SearchResult[]; via: string }> {
+): Promise<{ results: SearchResult[]; via: string; exaUsd: number; tavilyCredits: number }> {
   let lastError: unknown;
   let emptyVia: string | undefined;
   for (const rung of SEARCH_LADDER) {
     if (!rung.enabled()) continue;
     try {
-      const results = await rung.search(query, n);
-      if (results.length) return { results, via: rung.name };
+      const { results, exaUsd, tavilyCredits } = await rung.search(query, n);
+      if (results.length) return { results, via: rung.name, exaUsd, tavilyCredits };
       emptyVia = rung.name;
     } catch (e) {
       lastError = e;
     }
   }
-  if (emptyVia) return { results: [], via: emptyVia };
+  if (emptyVia) return { results: [], via: emptyVia, exaUsd: 0, tavilyCredits: 0 };
   throw lastError instanceof Error
     ? lastError
     : new Error("No search provider configured: set SEARXNG_URL, EXA_API_KEY, or TAVILY_API_KEY");
@@ -222,14 +237,17 @@ export function webTools(sink: Sink) {
       ),
     }),
     execute: async ({ query, max_results }) => {
-      const { results, via } = await searchWeb(query, max_results);
+      const { results, via, exaUsd, tavilyCredits } = await searchWeb(query, max_results);
       for (const r of results) sink.sources.add(r.url);
+      sink.cost.exa += exaUsd;
+      sink.cost.tavilyCredits += tavilyCredits;
       record(sink, {
         type: "search",
         query,
         via,
         resultCount: results.length,
         results: results.map((r) => ({ title: r.title, url: r.url, preview: clip(r.content) })),
+        cost: exaUsd + tavilyUsd(tavilyCredits),
       });
       return { results };
     },
@@ -246,39 +264,54 @@ export function webTools(sink: Sink) {
       pages: z.array(z.object({ url: z.string(), text: z.string() })),
     }),
     execute: async ({ urls }) => {
-      const pages: { url: string; text: string; via: string }[] = await Promise.all(
-        urls.map(async (url: string) => {
+      const pages: { url: string; text: string; via: string; exaUsd: number; tavilyCredits: number }[] =
+        await Promise.all(
+          urls.map(async (url: string) => {
+          let exaUsd = 0;
+          let tavilyCredits = 0;
+
           const local = await impitFetch(url);
-          if (usable(local)) return { url, text: local.slice(0, PAGE_CAP), via: "impit" };
+          if (usable(local)) return { url, text: local.slice(0, PAGE_CAP), via: "impit", exaUsd, tavilyCredits };
 
           const rendered = await patchrightFetch(url);
-          if (usable(rendered)) return { url, text: rendered.slice(0, PAGE_CAP), via: "patchright" };
+          if (usable(rendered)) return { url, text: rendered.slice(0, PAGE_CAP), via: "patchright", exaUsd, tavilyCredits };
 
           const proxied = await patchrightFetch(url, { proxy: true });
           if (usable(proxied))
-            return { url, text: proxied.slice(0, PAGE_CAP), via: "patchright+proxy" };
+            return { url, text: proxied.slice(0, PAGE_CAP), via: "patchright+proxy", exaUsd, tavilyCredits };
 
           const solved = await patchrightFetch(url, { proxy: true, solve: true });
           if (usable(solved))
-            return { url, text: solved.slice(0, PAGE_CAP), via: "patchright+solver" };
+            return { url, text: solved.slice(0, PAGE_CAP), via: "patchright+solver", exaUsd, tavilyCredits };
 
-          const exaText = await exaContentsFetch(url);
-          if (usable(exaText)) return { url, text: exaText.slice(0, PAGE_CAP), via: "exa" };
+          const exa = await exaContentsFetch(url);
+          exaUsd += exa.usd;
+          if (usable(exa.text)) return { url, text: exa.text.slice(0, PAGE_CAP), via: "exa", exaUsd, tavilyCredits };
 
-          const tavilyText = await tavilyExtractFetch(url);
-          if (usable(tavilyText)) return { url, text: tavilyText.slice(0, PAGE_CAP), via: "tavily" };
+          const tav = await tavilyExtractFetch(url);
+          tavilyCredits += tav.credits;
+          if (usable(tav.text)) return { url, text: tav.text.slice(0, PAGE_CAP), via: "tavily", exaUsd, tavilyCredits };
 
-          const best = tavilyText || exaText || solved || proxied || rendered || local;
-          const via = tavilyText ? "tavily" : exaText ? "exa" : rendered ? "patchright" : "impit";
-          return { url, text: best.slice(0, PAGE_CAP), via };
+          const best = tav.text || exa.text || solved || proxied || rendered || local;
+          const via = tav.text ? "tavily" : exa.text ? "exa" : rendered ? "patchright" : "impit";
+          return { url, text: best.slice(0, PAGE_CAP), via, exaUsd, tavilyCredits };
         }),
       );
       for (const p of pages) sink.sources.add(p.url);
+      let exaUsd = 0;
+      let tavilyCredits = 0;
+      for (const p of pages) {
+        exaUsd += p.exaUsd;
+        tavilyCredits += p.tavilyCredits;
+      }
+      sink.cost.exa += exaUsd;
+      sink.cost.tavilyCredits += tavilyCredits;
       record(sink, {
         type: "fetch",
         urls,
         resultCount: pages.length,
         results: pages.map((p) => ({ url: p.url, chars: p.text.length, preview: clip(p.text), via: p.via })),
+        cost: exaUsd + tavilyUsd(tavilyCredits),
       });
       return { pages: pages.map(({ url, text }) => ({ url, text })) };
     },

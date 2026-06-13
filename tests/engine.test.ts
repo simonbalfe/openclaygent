@@ -24,6 +24,7 @@ test("conditionalRun=false skips the row with no LLM call", async () => {
   expect(r.skipped).toBe(true);
   expect(r.result).toBeNull();
   expect(r.tokens).toEqual({ input: 0, output: 0 });
+  expect(r.cost.total).toBe(0);
   expect(r.sources).toEqual([]);
   expect(r.agentLog).toEqual([]);
 });

@@ -21,6 +21,7 @@ its env is unset) — mechanism and rung order in `docs/architecture.md` (The to
 - `src/types.ts` — `Action` primitive + `RunResult` contract.
 - `src/engine.ts` — `run` (one row), `runTable` (a table).
 - `src/agent.ts` + `src/tools/web.ts` — Mastra agent + `web_search`/`fetch_page`.
+- `src/cost.ts` — per-provider cost accumulator + OpenRouter response cost extractor (exact-USD reporting).
 - `src/cli.ts` + `src/schema.ts` — CLI front end + JSON-Schema/short-form → Zod builder.
 - `tests/` — `bun test` suite (schema, skip path, template fill, extractor, search ladder; live opt-in).
 

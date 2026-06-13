@@ -27,7 +27,12 @@ test("ladder: all rungs empty returns the empty list, no error", async () => {
   setEnv({ SEARXNG_URL: "http://searxng.test", EXA_API_KEY: undefined, TAVILY_API_KEY: undefined });
   globalThis.fetch = (async () => json({ results: [] })) as unknown as typeof fetch;
 
-  expect(await searchWeb("q", 5)).toEqual({ results: [], via: "searxng" });
+  expect(await searchWeb("q", 5)).toEqual({
+    results: [],
+    via: "searxng",
+    exaUsd: 0,
+    tavilyCredits: 0,
+  });
 });
 
 test("ladder: no provider configured throws", async () => {

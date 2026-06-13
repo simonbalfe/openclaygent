@@ -22,7 +22,7 @@ the gap it closes (vs Clay's Claygent and the Ferret reference).
 
 ## Reliability & cost (the Ferret hardening gap)
 
-- [ ] Per-step cost / tier in `agentLog` — match Claygent's activity trace and Ferret's `agent_log`
+- [x] Per-run + per-step cost — exact USD per provider in `RunResult.cost` (`{ total, llm, tools, byProvider, tavilyCredits }`) and per paid tool step in `agentLog[].cost`. All figures are real, not estimated: OpenRouter via a fetch-tap on the per-run provider (captures every LLM call including the separate structuring call), Exa via `costDollars.total`, Apify via the run's `usageTotalUsd` (async start→poll→read), Tavily via `includeUsage` credits × `TAVILY_USD_PER_CREDIT`. Self-hosted rungs (SearXNG, impit, patchright) are $0. CLI prints it per row and as a table total. See `decisions.md` (Cost accounting).
 - [ ] Per-request caching — re-search / re-fetch of the same query/URL is free
 - [ ] Context compaction — truncate old tool results so long runs don't grow tokens quadratically
 - [ ] Page read windows (offset) — read large pages in chunks instead of one capped slice
