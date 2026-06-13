@@ -1,6 +1,6 @@
 import { runTable, type RunOptions } from "./engine.ts";
 import { buildSchema } from "./schema.ts";
-import { defineAction, type Row, type RunResult } from "./types.ts";
+import { defineAction, type AgentStep, type Row, type RunResult } from "./types.ts";
 import type { z } from "zod";
 
 const HELP = `openclaygent — per-row web-research agent
@@ -26,6 +26,8 @@ Options:
   --model <id>            OpenRouter model id (default: deepseek/deepseek-chat).
   --max-steps <n>         Max agent loop iterations (default: 5).
   --json                  Print raw JSON results instead of the table.
+  --verbose               Stream agent steps live with result previews (titles, URLs,
+                          snippets, page sizes). Goes to stderr when --json is set.
   --out <file>            Also write results as JSON to this file.
   --help                  Show this.`;
 
@@ -101,16 +103,53 @@ async function loadRows(path: string): Promise<Row[]> {
   return Array.isArray(data) ? data : [data];
 }
 
-function printRow(label: string, r: RunResult<z.ZodType>): void {
+function formatStep(s: AgentStep, detailed = false): string[] {
+  const lines: string[] = [];
+  const details = detailed ? (s.results ?? []) : [];
+  if (s.type === "search") {
+    lines.push(`search    "${s.query}"${s.via ? ` [${s.via}]` : ""} → ${s.resultCount} results`);
+    details.forEach((r, i) => {
+      lines.push(`    ${i + 1}. ${r.title || r.url || ""}`);
+      if (r.title && r.url) lines.push(`       ${r.url}`);
+      if (r.preview) lines.push(`       "${r.preview}"`);
+    });
+  } else if (s.type === "fetch") {
+    (s.urls ?? []).forEach((u, i) => {
+      const d = details[i];
+      const via = d?.via ? ` [${d.via}]` : "";
+      const chars = d?.chars !== undefined ? ` → ${d.chars} chars` : "";
+      lines.push(`fetch     ${u}${via}${chars}`);
+      if (d?.preview) lines.push(`       "${d.preview}"`);
+    });
+  } else if (s.type === "linkedin") {
+    lines.push(`linkedin  ${s.query} → ${s.resultCount} items`);
+    details.forEach((r, i) => {
+      lines.push(`    ${i + 1}. ${[r.title, r.preview].filter(Boolean).join(" — ")}`);
+      if (r.url) lines.push(`       ${r.url}`);
+    });
+  } else {
+    lines.push("answer");
+  }
+  return lines;
+}
+
+function printRow(label: string, r: RunResult<z.ZodType>, showSteps: boolean): void {
+  console.log("");
   if (r.skipped) {
-    console.log(`• ${label.padEnd(14)} SKIPPED`);
+    console.log(`${label}  (skipped)`);
     return;
   }
-  const steps = r.agentLog.map((s) => s.type).join("→");
-  console.log(`• ${label.padEnd(14)} ${JSON.stringify(r.result)}`);
-  console.log(
-    `  ${steps}  ${r.durationMs}ms  ${r.tokens.input}/${r.tokens.output} tok  src=${r.sources.length}`,
-  );
+  const stats = `${(r.durationMs / 1000).toFixed(1)}s · ${r.tokens.input} in / ${r.tokens.output} out tok · ${r.sources.length} sources`;
+  console.log(`${label}  ${stats}`);
+  if (showSteps) for (const s of r.agentLog) for (const line of formatStep(s)) console.log(`  ${line}`);
+  if (r.result === null || typeof r.result !== "object") {
+    console.log(`  ${r.result === null ? "no result" : String(r.result)}`);
+    return;
+  }
+  const fields = Object.entries(r.result as Record<string, unknown>);
+  const width = Math.max(0, ...fields.map(([k]) => k.length));
+  for (const [k, v] of fields)
+    console.log(`  ${k.padEnd(width)}  ${typeof v === "string" ? v : JSON.stringify(v)}`);
 }
 
 interface ActionSpec {
@@ -133,6 +172,13 @@ function buildOptions(flags: Flags): RunOptions {
   const opts: RunOptions = {};
   if (typeof flags.model === "string") opts.model = flags.model;
   if (typeof flags["max-steps"] === "string") opts.maxSteps = Number(flags["max-steps"]);
+  if (flags.verbose) {
+    const emit = flags.json ? console.error : console.log;
+    opts.onStep = (s) =>
+      formatStep(s, true).forEach((line) =>
+        emit(line.startsWith(" ") ? `    ${line}` : `  › ${line}`),
+      );
+  }
   return opts;
 }
 
@@ -159,7 +205,9 @@ const results = await runTable(action, rows, buildOptions(flags));
 if (flags.json) {
   console.log(JSON.stringify(rows.length === 1 ? results[0] : results, null, 2));
 } else {
-  rows.forEach((row, i) => printRow(Object.values(row)[0]?.toString() ?? `row ${i + 1}`, results[i]!));
+  rows.forEach((row, i) =>
+    printRow(Object.values(row)[0]?.toString() ?? `row ${i + 1}`, results[i]!, !flags.verbose),
+  );
   const totals = results.reduce(
     (acc, r) => ({ input: acc.input + r.tokens.input, output: acc.output + r.tokens.output }),
     { input: 0, output: 0 },

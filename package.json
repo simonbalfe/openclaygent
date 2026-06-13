@@ -17,6 +17,14 @@
   "dependencies": {
     "@mastra/core": "^1.41.0",
     "@openrouter/ai-sdk-provider": "^2.9.0",
+    "@tavily/core": "^0.7.6",
+    "@types/turndown": "^5.0.6",
+    "cheerio": "^1.2.0",
+    "domhandler": "^6.0.1",
+    "exa-js": "^2.13.0",
+    "impit": "^0.14.1",
+    "turndown": "^7.2.4",
+    "turndown-plugin-gfm": "^1.0.2",
     "zod": "^4.4.3",
     "zod-from-json-schema": "^0.5.3"
   },

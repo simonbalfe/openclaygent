@@ -1,0 +1,24 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo 'Doc ownership: docs/architecture.md owns the file map, tools, and scope; docs/decisions.md owns the gotchas; docs/roadmap.md owns the feature checklist; .env.example owns the env var list. A code change updates its owning doc in the same turn.'"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "prompt",
+            "prompt": "If this session changed src/, patchright/, docker-compose.yml, or added/removed an env var WITHOUT updating the owning doc (docs/architecture.md for the file map/tools/scope, docs/decisions.md for new gotchas, docs/roadmap.md for shipped features, .env.example for env vars), block and name the doc that needs the update. Pure doc edits, test-only changes, or code changes whose docs were updated in the same session pass."
+          }
+        ]
+      }
+    ]
+  }
+}

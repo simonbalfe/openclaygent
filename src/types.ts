@@ -10,11 +10,21 @@ export interface Action<S extends z.ZodType> {
   conditionalRun?: (row: Row) => boolean;
 }
 
+interface StepResult {
+  title?: string;
+  url?: string;
+  chars?: number;
+  preview?: string;
+  via?: string;
+}
+
 export interface AgentStep {
-  type: "search" | "fetch" | "answer";
+  type: "search" | "fetch" | "linkedin" | "answer";
   query?: string;
   urls?: string[];
+  via?: string;
   resultCount?: number;
+  results?: StepResult[];
 }
 
 export interface RunResult<S extends z.ZodType> {

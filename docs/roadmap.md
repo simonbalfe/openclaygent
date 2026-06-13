@@ -14,7 +14,10 @@ the gap it closes (vs Clay's Claygent and the Ferret reference).
 - [x] `Sink` → `sources` + `agentLog` provenance
 - [x] Conditional-run skip (the credit saver)
 - [x] CLI — single (`--input`) and batch (`--rows` JSON/CSV), `--require`, `--json`, `--out`, `--model`
-- [x] `jsonToZod` — build the output schema from a CLI JSON shape
+- [x] SearXNG search backend — `SEARXNG_URL` env switches `web_search` to a local SearXNG instance (zero-cost search); unset = Exa
+- [x] Fetch ladder — impit (browser TLS) + Crawl4AI-style pruning extraction (`src/tools/extract.ts`), escalating through patchright (direct → +proxy → +solver) to paid Exa `/contents` + Tavily `/extract`. Mechanism in `architecture.md` (The tools) + `decisions.md` (Fetch ladder)
+- [x] LinkedIn tools — `linkedin_profile` / `linkedin_posts` / `linkedin_post_reactions` / `linkedin_find_people` / `linkedin_company` (exact headcount, size range, industry, HQ, founded year, follower count) via Apify HarvestAPI actors (no-cookie, ~$2–4/1k items; employee search $4/1k, 3x with emails), env-gated on `APIFY_API_TOKEN`
+- [x] `buildSchema` — turn a CLI JSON Schema / short form into the action's Zod `output`
 - [x] Docs — architecture (+ Mermaid), decisions
 
 ## Reliability & cost (the Ferret hardening gap)
@@ -29,12 +32,12 @@ the gap it closes (vs Clay's Claygent and the Ferret reference).
 
 - [ ] `waterfall` — ranked providers, try in order until one returns (83 sheet rows use this)
 - [ ] `recipe` — multi-step chains, output of A feeds B (13 sheet rows, blueprints in the CSV)
-- [ ] Model tiers — name a tier per action (helium/neon/argon) instead of a raw model id
+- [ ] Depth tiers — name a tier per action (helium/neon/argon) instead of a raw model id; each tier is a `{ model, maxSteps, maxOutputTokens }` preset so cheap rows get a shallow run and hard rows a deep one
 
 ## Inputs
 
 - [ ] Metaprompt / auto-tune — rewrite a rough prompt into a hardened one (Clay's Sculptor; sheet `Metaprompt` column)
-- [ ] Action library import — parse the Clay catalog CSV, convert `use-ai` rows into `Action`s
+- [ ] Action library import — parse the Clay catalog CSV, convert prompt-bearing `action` rows into `Action`s
 - [ ] Typed inputs — validate `Input Types` (company-domain, work-email, full-name) before a run
 
 ## Interfaces
@@ -45,8 +48,11 @@ the gap it closes (vs Clay's Claygent and the Ferret reference).
 
 ## Fetch & providers
 
-- [ ] Multi-tier fetch cascade for hard sites — native → browser → paid proxy (Ferret has 5 tiers; Exa alone won't crack JS/anti-bot/login pages)
-- [ ] Search provider seam — swap Exa for SearXNG (zero-cost) / Serper / Brave
+- [x] Browser tier — patchright compose service (stealth Chrome over plain HTTP, `patchright/`), headed inside Xvfb (`seccomp:unconfined` + launch-retry); `fetch_page` escalates on JS-shell/block-page detection. Cracks CSR/JS-shell pages; does NOT crack G2 (DataDome) or Crunchbase (interactive CF Turnstile) on its own
+- [x] Residential proxy rung — Evomi (`EVOMI_*`) via `&proxy=1`; exit IP verified residential, `via: patchright+proxy` in the log. Helps IP-reputation walls; does NOT beat DataDome (G2) or Turnstile (Crunchbase) on its own
+- [~] CapSolver solver rung — `&solve=1` wired into `patchright/server.mjs` (AntiCloudflareTask + sticky Evomi session, `via: patchright+solver`, `CAPSOLVER_API_KEY`). Built but unproven: CapSolver's AntiCloudflareTask was under maintenance at build time. Crunchbase is a full CF managed challenge (not a widget), so the token task doesn't apply
+- [x] Paid content fallback — last-resort Exa `/contents` then Tavily `/extract` when every self-hosted fetch rung fails `usable()`; cracks walled aggregators from Exa's cache. Mechanism in `decisions.md` (Fetch ladder)
+- [x] Search provider cascade — SearXNG (free) → Exa → Tavily ladder, escalating on error or zero results. Mechanism in `decisions.md` (Search ladder). Tier-aware rung selection still waits on depth tiers
 - [ ] Enrichment tool — `enrich(provider, input)` for structured GTM data (LinkedIn, tech-stack, jobs) as a waterfall step
 
 ## Scale & ops

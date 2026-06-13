@@ -1,0 +1,38 @@
+services:
+  claygent:
+    build: .
+    profiles: ["cli"]
+    env_file: .env
+    environment:
+      - SEARXNG_URL=http://searxng:8080
+      - PATCHRIGHT_URL=http://patchright:9223
+    depends_on:
+      - searxng
+      - patchright
+
+  patchright:
+    build: ./patchright
+    container_name: openclaygent-patchright
+    ports:
+      - "9223:9223"
+    environment:
+      - EVOMI_USERNAME=${EVOMI_USERNAME:-}
+      - EVOMI_PASSWORD=${EVOMI_PASSWORD:-}
+      - EVOMI_GATEWAY=${EVOMI_GATEWAY:-}
+      - CAPSOLVER_API_KEY=${CAPSOLVER_API_KEY:-}
+    # Headed Chrome needs user namespaces for its sandbox — Docker's default seccomp blocks them.
+    security_opt:
+      - seccomp:unconfined
+    init: true
+    restart: unless-stopped
+
+  searxng:
+    image: searxng/searxng:latest
+    container_name: openclaygent-searxng
+    ports:
+      - "8888:8080"
+    volumes:
+      - ./searxng/settings.yml:/etc/searxng/settings.yml:ro
+    environment:
+      - SEARXNG_SECRET=${SEARXNG_SECRET:-openclaygent-local-dev}
+    restart: unless-stopped

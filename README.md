@@ -23,7 +23,7 @@ output:  { result, sources, agentLog, tokens, durationMs, model }
 - **Provenance** — every source URL and tool step recorded for replay.
 
 This is the single `use-ai` **action** loop — ~80% of Claygent's value. For what's
-deliberately out of scope and the extensions it grows toward, see `CLAUDE.md` (Scope).
+deliberately out of scope and the extensions it grows toward, see `docs/architecture.md` (Scope).
 
 ## Setup
 
@@ -49,44 +49,37 @@ and `docs/architecture.md` (CLI).
 
 ## Define your own action
 
-```ts
-import { z } from "zod";
-import { defineAction } from "./src/types.ts";
-import { runTable } from "./src/engine.ts";
+Save a reusable action as JSON and run it over any row file:
 
-const action = defineAction({
-  name: "uses_crm",
-  instructions: "Identify which CRM the company uses, from their site or public posts.",
-  template: "Company: {{company}}\nWebsite: {{domain}}",
-  conditionalRun: (row) => Boolean(row.domain),
-  output: z.object({
-    crm: z.string().nullable(),
-    evidence_url: z.string().nullable(),
-    confidence: z.enum(["low", "medium", "high"]),
-  }),
-});
+```json
+{
+  "name": "uses_crm",
+  "instructions": "Identify which CRM the company uses, from their site or public posts.",
+  "template": "Company: {{company}}\nWebsite: {{domain}}",
+  "schema": {
+    "crm": "string?",
+    "evidence_url": "string?",
+    "confidence": "low|medium|high"
+  }
+}
+```
 
-const rows = [{ company: "Linear", domain: "linear.app" }];
-console.log(await runTable(action, rows));
+```bash
+bun run cli -- --action uses_crm.json --rows companies.csv --require domain --out results.json
 ```
 
 ## Tests
 
 ```bash
-bun test               # deterministic tests: schema building, skip path, template fill
+bun test               # deterministic tests: schema building, skip path, template fill, extractor, search ladder
 RUN_LIVE=1 bun test    # also runs the live end-to-end test (needs API keys + credits)
 ```
 
 ## Layout
 
-| File | Role |
-|---|---|
-| `src/types.ts`    | the `Action` primitive + `RunResult` contract |
-| `src/tools/web.ts`| `web_search` + `fetch_page` (Exa), record sources & steps |
-| `src/agent.ts`    | Mastra agent on OpenRouter, tuned research behaviour |
-| `src/engine.ts`   | `run()` one row · `runTable()` a table · template-fill · conditional-run · repair retry |
-| `src/cli.ts` · `src/schema.ts` | CLI front end · JSON-Schema/short-form → Zod |
-| `tests/`          | `bun test` suite (schema, skip path; live opt-in via `RUN_LIVE`) |
+The canonical file map lives in `docs/architecture.md` (File map). In brief: `src/` is the
+engine, agent, tools, and CLI; `tests/` is the `bun test` suite; `docs/` is architecture,
+decisions, and roadmap.
 
 ## Docs
 

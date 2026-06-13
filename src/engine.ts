@@ -1,12 +1,13 @@
 import type { z } from "zod";
 import { buildAgent, DEFAULT_MODEL, openrouter } from "./agent.ts";
-import type { Sink } from "./tools/web.ts";
-import type { Action, Row, RunResult } from "./types.ts";
+import { record, type Sink } from "./tools/web.ts";
+import type { Action, AgentStep, Row, RunResult } from "./types.ts";
 
 export interface RunOptions {
   model?: string;
   maxSteps?: number;
   maxOutputTokens?: number;
+  onStep?: (step: AgentStep) => void;
 }
 
 type Generated<S extends z.ZodType> = {
@@ -51,7 +52,7 @@ export async function run<S extends z.ZodType>(
   if (action.conditionalRun && !action.conditionalRun(row)) return skippedResult(model);
 
   const started = performance.now();
-  const sink: Sink = { sources: new Set(), log: [] };
+  const sink: Sink = { sources: new Set(), log: [], onStep: opts.onStep };
   const agent = buildAgent(sink, model);
   const structuringModel = openrouter.chat(model);
   const { text, missing } = fillTemplate(action.template, row);
@@ -77,7 +78,7 @@ export async function run<S extends z.ZodType>(
     inputTokens += res.usage?.inputTokens ?? 0;
     outputTokens += res.usage?.outputTokens ?? 0;
   }
-  sink.log.push({ type: "answer" });
+  record(sink, { type: "answer" });
 
   return {
     result,
