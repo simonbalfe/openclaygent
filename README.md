@@ -28,22 +28,34 @@ CSV and you get one result per row: the brief is fixed, the rows vary.
 ## How it works
 
 The agent loops — reason, pick a tool, observe — until it can answer. Its two tools are
-**waterfalls**: each tries the cheapest rung you've configured first and only falls through to
-a paid one when that misses or fails. An unset key is just a skipped rung.
+**waterfalls**: each rung runs only when the one above it fails or returns empty, so you spend
+on a paid rung only after the free ones miss. An unset key is just a skipped rung.
 
 ```mermaid
-flowchart LR
-  IN(["Brief + Row"]) --> A["Agent loop<br/>reason → act → observe"] --> OUT(["Typed, cited JSON<br/>sources · cost"])
-  A -. web_search .-> S["Search<br/>SearXNG → Exa → Tavily"]
-  A -. fetch_page .-> F["Fetch<br/>impit → patchright → Tavily"]
+flowchart TB
+  A(["Agent loop · reason → act → observe"]) --> OUT(["Typed, cited JSON · sources · cost"])
+  A -. web_search .-> S1
+  A -. fetch_page .-> F1
+
+  subgraph SEARCH ["Search — find URLs / facts"]
+    direction TB
+    S1["SearXNG · free"] -->|empty| S2["Exa · credit"] -->|empty| S3["Tavily · credit"]
+  end
+
+  subgraph FETCH ["Fetch — read a page (always live)"]
+    direction TB
+    F1["impit · free"] -->|blocked| F2["patchright · free"] -->|blocked| F3["+ residential proxy · free"] -->|blocked| F4["+ Turnstile solver · free"] -->|fail| F5["Tavily /extract · credit"]
+  end
 
   classDef io fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a;
-  classDef agent fill:#ede9fe,stroke:#a78bfa,color:#4c1d95;
-  classDef tool fill:#dcfce7,stroke:#4ade80,color:#14532d;
-  class IN,OUT io;
-  class A agent;
-  class S,F tool;
+  classDef free fill:#dcfce7,stroke:#22c55e,color:#14532d;
+  classDef paid fill:#fef3c7,stroke:#f59e0b,color:#92400e;
+  class A,OUT io
+  class S1,F1,F2,F3,F4 free
+  class S2,S3,F5 paid
 ```
+
+Green = free rung, amber = paid (a search credit or extract call).
 
 ## Setup
 
