@@ -270,6 +270,25 @@ Stop prompt hook that flags a `src/`, compose, or `patchright/` change landing w
 owning doc. No hook scripts to maintain. Escalate to a real pre-commit diff check only if
 drift survives the nudge.
 
+## Crunchbase: a fallback-only Apify actor, not a fetch target
+
+Crunchbase is CF-Turnstile-walled, so `fetch_page` can't get it and the behaviour prompt says
+never to try. The primary path for funding/firmographics is still **search the mirrored open
+sources** (Tracxn, Dealroom, Sacra, news). `crunchbase_company` (`src/tools/crunchbase.ts`) is
+a **last resort**: the agent calls it only when that search fails to pin the round/total/
+investors — gated by the tool description and the behaviour prompt, not by code. SearXNG
+usually surfaces the `crunchbase.com/organization/<slug>` URL in search results even though the
+page is unfetchable, so the agent passes that URL to the actor (name-search is the secondary
+mode). It runs through the shared `runActor` (`apify.ts`), env-gated on `APIFY_API_TOKEN` like
+the LinkedIn tools, and bills via the run's `usageTotalUsd` into `sink.cost.apify`.
+
+The actor id is **`CRUNCHBASE_ACTOR` (default `parseforge~crunchbase-scraper`)** because
+third-party Crunchbase actors come and go and change their I/O contract — swapping the env var
+beats a code edit. Output mapping is deliberately defensive (reads several field-name aliases
+for funding/round/investors) so a different actor's slightly different shape still maps. Not
+live-verified in CI (a real run costs Apify credits); smoke-test against your chosen actor
+before relying on it.
+
 ## Two frontends, one core — never duplicate run logic
 
 The CLI (`src/cli.ts`) and the HTTP API (`src/api.ts`) are both thin adapters over the same

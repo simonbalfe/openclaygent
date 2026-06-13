@@ -23,7 +23,7 @@ its env is unset) — mechanism and rung order in `docs/architecture.md` (The to
 - `src/core/engine.ts` — `run` (one row), `runTable` (a table).
 - `src/core/agent.ts` — Mastra agent + cost-tapped OpenRouter provider.
 - `src/core/action.ts` — `ActionSpec` + `buildAction`, the shared adapter both frontends call (no duplicated assembly); `src/core/schema.ts` — JSON-Schema/short-form → Zod builder.
-- `src/tools/` — one concern per file: `web.ts` (assembler) · `search.ts` (`web_search` + ladder) · `fetch.ts` (`fetch_page` + ladder) · `providers.ts` (exa/tavily/impit clients) · `sink.ts` (`Sink`/`record`/`clip`) · `extract.ts` · `linkedin.ts`.
+- `src/tools/` — one concern per file: `web.ts` (assembler) · `search.ts` (`web_search` + ladder) · `fetch.ts` (`fetch_page` + ladder, PDF via unpdf) · `providers.ts` (exa/tavily/impit clients) · `sink.ts` (`Sink`/`record`/`clip`) · `extract.ts` (Readability→prune→Turndown) · `apify.ts` (shared `runActor`) · `linkedin.ts` · `crunchbase.ts` (fallback-only).
 - `src/core/cost.ts` — per-provider cost accumulator + OpenRouter response cost extractor (exact-USD reporting).
 - `src/cli.ts` (CLI entry) + `src/cli/` (`args.ts` parse · `input.ts` rows/action/options · `render.ts` output).
 - `src/api.ts` — HTTP entry (Hono + `@hono/zod-openapi`): `POST /run`, `/openapi.json`, `/docs`, `/health`.

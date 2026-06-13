@@ -23,8 +23,8 @@ export function formatStep(s: AgentStep, detailed = false): string[] {
       lines.push(`fetch     ${u}${via}${chars}`);
       if (d?.preview) lines.push(`       "${d.preview}"`);
     });
-  } else if (s.type === "linkedin") {
-    lines.push(`linkedin  ${s.query} → ${s.resultCount} items`);
+  } else if (s.type === "linkedin" || s.type === "crunchbase") {
+    lines.push(`${s.type}  ${s.query} → ${s.resultCount} items`);
     details.forEach((r, i) => {
       lines.push(`    ${i + 1}. ${[r.title, r.preview].filter(Boolean).join(" — ")}`);
       if (r.url) lines.push(`       ${r.url}`);

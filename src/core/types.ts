@@ -19,7 +19,7 @@ interface StepResult {
 }
 
 export interface AgentStep {
-  type: "search" | "fetch" | "linkedin" | "answer";
+  type: "search" | "fetch" | "linkedin" | "crunchbase" | "answer";
   query?: string;
   urls?: string[];
   via?: string;

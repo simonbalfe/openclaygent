@@ -58,7 +58,7 @@ the gap it closes (vs Clay's Claygent and the Ferret reference).
 - [x] Extraction — Readability-first (`@mozilla/readability` + `linkedom`, article/blog) → Crawl4AI prune fallback (structured pages) → Turndown; leftover non-data tables flattened so no raw `<table>` leaks; PDFs parsed via `unpdf`. Mechanism in `decisions.md` (Fetch ladder)
 - [ ] Wire the solver to fire on gated-but-loaded pages — today `fetch_page` only escalates to `&solve=1` when an earlier rung fails `usable()`; a page whose shell loads but hides data behind an unsolved `cf-turnstile` widget never reaches the (working) Turnstile rung. Make `usable()` also fail on a present-but-unsolved widget so the solver triggers in real runs
 - [ ] ReaderLM-v2 research — evaluate Jina's open-source 1.5B HTML→markdown/JSON model (`jinaai/ReaderLM-v2`, HuggingFace) as an extraction upgrade for messy HTML and HTML→structured-JSON. Open questions: GPU cost + per-page latency vs the free heuristic, and the model's non-commercial license (CC-BY-NC — verify). Likely overkill for normal pages; benchmark it only on pages the heuristic mangles
-- [ ] Enrichment tool — `enrich(provider, input)` for structured GTM data (LinkedIn, tech-stack, jobs) as a waterfall step
+- [~] Enrichment tools — specialist scrapers for bot-walled GTM sources, env-gated on `APIFY_API_TOKEN`, fallback-only (used when search/fetch can't get the fact). Shipped: `linkedin_*` (HarvestAPI), `crunchbase_company` (`CRUNCHBASE_ACTOR`, default `parseforge~crunchbase-scraper`) for funding/firmographics. Next: jobs/hiring signals (JobSpy OSS or an Apify jobs actor), G2/tech-stack
 
 ## Scale & ops
 

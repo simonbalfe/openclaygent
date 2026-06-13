@@ -1,6 +1,7 @@
 import { Agent } from "@mastra/core/agent";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { type CostAccumulator, extractCostUsd } from "./cost.ts";
+import { crunchbaseTools } from "../tools/crunchbase.ts";
 import { linkedinTools } from "../tools/linkedin.ts";
 import { type Sink } from "../tools/sink.ts";
 import { webTools } from "../tools/web.ts";
@@ -62,6 +63,10 @@ const BEHAVIOUR = [
   "  indexed sources, so SEARCH for the fact itself and read whichever open sources answer",
   "  it (the company's own site, Tracxn, Dealroom, Sacra, news). Reconcile across two or",
   "  more: when they disagree, take the most recent primary source and note the spread.",
+  "- Crunchbase funding/firmographics fallback: ONLY if that search still can't pin the",
+  "  funding round, total raised, or investors, and the crunchbase_company tool is available,",
+  "  call it once — pass the crunchbase.com/organization URL if one appeared in your search",
+  "  results, else the company name. It costs credits, so it is a last resort, not a first move.",
   "",
   "Answering:",
   "- Output only concrete values from what you actually read this run. Never placeholders,",
@@ -85,7 +90,7 @@ export function buildAgent(
   const provider = buildOpenRouter(sink.cost);
   const tools = {
     ...webTools(sink),
-    ...(process.env.APIFY_API_TOKEN ? linkedinTools(sink) : {}),
+    ...(process.env.APIFY_API_TOKEN ? { ...linkedinTools(sink), ...crunchbaseTools(sink) } : {}),
   };
   const agent = new Agent({
     id: `openclaygent-${model.replace(/[^a-z0-9]/gi, "-")}`,
