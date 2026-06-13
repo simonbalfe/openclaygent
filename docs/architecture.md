@@ -115,10 +115,11 @@ is recorded without global state:
   (`src/tools/extract.ts`, see decisions.md) renders the page as markdown for free; when
   the result looks like a JS shell or block page it escalates to the **patchright** compose
   service (`PATCHRIGHT_URL`, real rendered Chrome — see decisions.md), recorded as
-  `via: patchright` in the step. When every self-hosted rung fails, two paid content rungs
-  run last — **Exa `/contents`** (`via: exa`) then **Tavily `/extract`** (`via: tavily`),
-  both via their official SDKs. Capped at a bounded read window. Only used when snippets are
-  insufficient.
+  `via: patchright` in the step. When every self-hosted rung fails, one paid rung runs last —
+  **Tavily `/extract`** (`via: tavily`, official SDK), an always-live managed fetch. Exa
+  `/contents` is deliberately **not** a fetch rung: it is cache-first, which conflicts with
+  the live-data priority (see decisions.md, Fetch ladder). Capped at a bounded read window.
+  Only used when snippets are insufficient.
 
 Cheapest-first: the agent is told to prefer search snippets and only fetch when it needs a
 specific page's full text. Full verbatim examples of what `fetch_page` returns live in
@@ -146,7 +147,7 @@ Every run returns `RunResult<S>` (`src/core/types.ts`):
 | `src/core/types.ts` | `Action` primitive, `RunResult` contract, `defineAction` helper |
 | `src/tools/web.ts` | thin assembler — `webTools(sink)` returns `web_search` + `fetch_page` from `search.ts` and `fetch.ts` |
 | `src/tools/search.ts` | `web_search` tool + `searchWeb` (SearXNG→Exa→Tavily ladder) |
-| `src/tools/fetch.ts` | `fetch_page` tool (impit→patchright→Exa /contents→Tavily /extract ladder), `usable` shell-page guard |
+| `src/tools/fetch.ts` | `fetch_page` tool (impit→patchright→Tavily /extract ladder), `usable` shell-page guard |
 | `src/tools/providers.ts` | shared external clients: the `impit` instance, lazy `exaClient`, lazy `tavilyClient` |
 | `src/tools/sink.ts` | the per-run `Sink` (sources, agent log, cost, `onStep`) + `record`/`clip` helpers, shared by every tool |
 | `src/tools/extract.ts` | pruning extractor — Crawl4AI-port scoring + Turndown GFM render |

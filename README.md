@@ -35,7 +35,7 @@ a paid one when that misses or fails. An unset key is just a skipped rung.
 flowchart LR
   IN(["Brief + Row"]) --> A["Agent loop<br/>reason → act → observe"] --> OUT(["Typed, cited JSON<br/>sources · cost"])
   A -. web_search .-> S["Search<br/>SearXNG → Exa → Tavily"]
-  A -. fetch_page .-> F["Fetch<br/>impit → patchright → Exa → Tavily"]
+  A -. fetch_page .-> F["Fetch<br/>impit → patchright → Tavily"]
 
   classDef io fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a;
   classDef agent fill:#ede9fe,stroke:#a78bfa,color:#4c1d95;
@@ -57,13 +57,13 @@ cp .env.example .env    # then fill in the keys below
 | Variable | What it's for | Get one |
 |---|---|---|
 | `OPENROUTER_API_KEY` | The model brain — one key drives any model (DeepSeek, Claude, GPT, Llama) | [openrouter.ai/keys](https://openrouter.ai/keys) |
-| `EXA_API_KEY` | Gives it eyes — web search **and** page fetch in one key | [dashboard.exa.ai](https://dashboard.exa.ai/api-keys) |
+| `EXA_API_KEY` | Web search — how it finds the pages to read (fetching them is free via the built-in rungs) | [dashboard.exa.ai](https://dashboard.exa.ai/api-keys) |
 
 That's enough to run. DeepSeek is the default model (cheap); swap per run with `--model`.
 
 > Prefer **free** search + fetch over paying Exa? Run `docker compose up -d` (starts a local
 > SearXNG + a headless-browser fetch service) and set `SEARXNG_URL` + `PATCHRIGHT_URL`. Then
-> `EXA_API_KEY` becomes optional — it's just the paid fallback. See `docs/architecture.md`.
+> `EXA_API_KEY` becomes optional — it's just the paid search fallback. See `docs/architecture.md`.
 
 **Everything else is optional** — it only changes cost, reach, or adds tools:
 

@@ -2,7 +2,7 @@ import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 import { tavilyUsd } from "../core/cost.ts";
 import { htmlToMarkdown } from "./extract.ts";
-import { exaClient, impit, tavilyClient } from "./providers.ts";
+import { impit, tavilyClient } from "./providers.ts";
 import { clip, record, type Sink } from "./sink.ts";
 
 const PAGE_CAP = 12000;
@@ -60,21 +60,6 @@ async function impitFetch(url: string): Promise<string> {
   }
 }
 
-async function exaContentsFetch(url: string): Promise<{ text: string; usd: number }> {
-  const client = exaClient();
-  if (!client) return { text: "", usd: 0 };
-  try {
-    const data = await client.getContents(url, {
-      text: { maxCharacters: PAGE_CAP },
-      livecrawl: "fallback",
-      livecrawlTimeout: 12000,
-    });
-    return { text: data.results[0]?.text ?? "", usd: data.costDollars?.total ?? 0 };
-  } catch {
-    return { text: "", usd: 0 };
-  }
-}
-
 async function tavilyExtractFetch(url: string): Promise<{ text: string; credits: number }> {
   const client = tavilyClient();
   if (!client) return { text: "", credits: 0 };
@@ -102,54 +87,42 @@ export function fetchPageTool(sink: Sink) {
       pages: z.array(z.object({ url: z.string(), text: z.string() })),
     }),
     execute: async ({ urls }) => {
-      const pages: { url: string; text: string; via: string; exaUsd: number; tavilyCredits: number }[] =
+      const pages: { url: string; text: string; via: string; tavilyCredits: number }[] =
         await Promise.all(
           urls.map(async (url: string) => {
-          let exaUsd = 0;
-          let tavilyCredits = 0;
-
           const local = await impitFetch(url);
-          if (usable(local)) return { url, text: local.slice(0, PAGE_CAP), via: "impit", exaUsd, tavilyCredits };
+          if (usable(local)) return { url, text: local.slice(0, PAGE_CAP), via: "impit", tavilyCredits: 0 };
 
           const rendered = await patchrightFetch(url);
-          if (usable(rendered)) return { url, text: rendered.slice(0, PAGE_CAP), via: "patchright", exaUsd, tavilyCredits };
+          if (usable(rendered)) return { url, text: rendered.slice(0, PAGE_CAP), via: "patchright", tavilyCredits: 0 };
 
           const proxied = await patchrightFetch(url, { proxy: true });
           if (usable(proxied))
-            return { url, text: proxied.slice(0, PAGE_CAP), via: "patchright+proxy", exaUsd, tavilyCredits };
+            return { url, text: proxied.slice(0, PAGE_CAP), via: "patchright+proxy", tavilyCredits: 0 };
 
           const solved = await patchrightFetch(url, { proxy: true, solve: true });
           if (usable(solved))
-            return { url, text: solved.slice(0, PAGE_CAP), via: "patchright+solver", exaUsd, tavilyCredits };
-
-          const exa = await exaContentsFetch(url);
-          exaUsd += exa.usd;
-          if (usable(exa.text)) return { url, text: exa.text.slice(0, PAGE_CAP), via: "exa", exaUsd, tavilyCredits };
+            return { url, text: solved.slice(0, PAGE_CAP), via: "patchright+solver", tavilyCredits: 0 };
 
           const tav = await tavilyExtractFetch(url);
-          tavilyCredits += tav.credits;
-          if (usable(tav.text)) return { url, text: tav.text.slice(0, PAGE_CAP), via: "tavily", exaUsd, tavilyCredits };
+          if (usable(tav.text))
+            return { url, text: tav.text.slice(0, PAGE_CAP), via: "tavily", tavilyCredits: tav.credits };
 
-          const best = tav.text || exa.text || solved || proxied || rendered || local;
-          const via = tav.text ? "tavily" : exa.text ? "exa" : rendered ? "patchright" : "impit";
-          return { url, text: best.slice(0, PAGE_CAP), via, exaUsd, tavilyCredits };
+          const best = tav.text || solved || proxied || rendered || local;
+          const via = tav.text ? "tavily" : rendered ? "patchright" : "impit";
+          return { url, text: best.slice(0, PAGE_CAP), via, tavilyCredits: tav.credits };
         }),
       );
       for (const p of pages) sink.sources.add(p.url);
-      let exaUsd = 0;
       let tavilyCredits = 0;
-      for (const p of pages) {
-        exaUsd += p.exaUsd;
-        tavilyCredits += p.tavilyCredits;
-      }
-      sink.cost.exa += exaUsd;
+      for (const p of pages) tavilyCredits += p.tavilyCredits;
       sink.cost.tavilyCredits += tavilyCredits;
       record(sink, {
         type: "fetch",
         urls,
         resultCount: pages.length,
         results: pages.map((p) => ({ url: p.url, chars: p.text.length, preview: clip(p.text), via: p.via })),
-        cost: exaUsd + tavilyUsd(tavilyCredits),
+        cost: tavilyUsd(tavilyCredits),
       });
       return { pages: pages.map(({ url, text }) => ({ url, text })) };
     },

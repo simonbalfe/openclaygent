@@ -118,7 +118,7 @@ Tavily was added as the last rung after comparing the gtm-research waterfall (it
 free keyword pool → Exa → Tavily); it is a pure backup for when both cheaper rungs fail.
 The tools remain the swap seam — the agent and engine are unaware of the provider.
 
-## Fetch: impit → patchright (direct → +Evomi → +CapSolver) → Exa /contents → Tavily /extract
+## Fetch: impit → patchright (direct → +Evomi → +CapSolver) → Tavily /extract
 
 `fetch_page` tries a local fetch first — `impit` (Chrome TLS fingerprint, so plain
 bot-checks pass) plus `src/tools/extract.ts`, a TypeScript port of Crawl4AI's
@@ -129,8 +129,8 @@ Survivors convert to GFM markdown via Turndown (+gfm plugin) — headings, lists
 crucially tables, since pricing pages are tables. Images are dropped; same-domain links
 keep their hrefs so the agent can navigate the site, off-domain links flatten to text to
 save tokens. The cheap, self-hosted rungs always run first; only when every one of them
-fails `usable()` do we fall back to the two **paid** content providers (Exa, then Tavily) as
-a last resort. The self-hosted rungs:
+fails `usable()` do we fall back to the one **paid** rung (Tavily `/extract`) as a last
+resort. The self-hosted rungs:
 
 1. **impit** — browser-TLS HTTP, free, default.
 2. **patchright direct** — when impit fails `usable()` (under 200 chars, or under 3000 chars
@@ -165,15 +165,25 @@ A fourth rung, `&solve=1`, handles the two challenge shapes separately, free-fir
 
 `via: patchright+solver` for both.
 
-When all of the above fail, two **paid** content rungs run as last resort, in cost order:
-**Exa `/contents`** (`via: exa`, official `exa-js` SDK, `EXA_API_KEY`) then **Tavily `/extract`**
-(`via: tavily`, official `@tavily/core` SDK, `TAVILY_API_KEY`). Exa goes first because it serves
-its own pre-crawled cache — it cracks DataDome/Turnstile-walled aggregators (Crunchbase,
-LinkedIn) that the live browser rungs can't, since Exa already indexed the public surface and
-isn't doing a live hit. Tavily `/extract` is a live fetch, so it dies on the same walls the
-browser does; it earns the last slot only as a different-infra second opinion for non-walled
-pages. Both auto-skip when their key is unset; the search rungs use the same two SDKs
-(`exaSearch`/`tavilySearch`), so the clients are constructed once and shared.
+When all of the above fail, one **paid** rung runs as last resort: **Tavily `/extract`**
+(`via: tavily`, official `@tavily/core` SDK, `TAVILY_API_KEY`, `extractDepth: "advanced"`). It
+is always-live — it fetches and renders the page fresh on every call — and uses a different
+proxy/infra stack than patchright, so it is a genuine second attempt rather than a repeat.
+Auto-skips when `TAVILY_API_KEY` is unset.
+
+**Why not Exa `/contents` as a fetch rung (it used to be one).** Live, up-to-date data is the
+priority for this tool, and Exa `/contents` is **cache-first** — by default it serves Exa's
+pre-crawled copy, which can be months stale. That is the wrong answer for "current pricing /
+does this company offer a free trial *now*". The only way to make Exa fresh is to force
+livecrawl (`maxAgeHours: 0`), but then it is just a generic live crawler — weaker at beating
+anti-bot walls than the rung we already ran for free one step earlier (patchright + residential
+proxy + Turnstile solver). So Exa's fetch role was either stale (cache) or redundant
+(livecrawl); it was dropped from `fetch_page`. Exa stays the second **search** rung, where its
+index is an asset and the agent live-fetches the page afterwards anyway. The corollary: when a
+page is un-fetchable live (hard anti-bot, every live rung blocked), `fetch_page` returns nothing
+rather than stale cache — the agent should note it could not verify live, not quote a stale page.
+The `exaSearch`/`tavilySearch` clients are still constructed once and shared with the fetch
+Tavily client.
 
 The browser runs **headed inside Xvfb** (`patchright/Dockerfile` wraps the start in `xvfb-run`,
 `server.mjs` launches `chromium.launch({ headless: false })`) because Cloudflare managed
