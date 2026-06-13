@@ -108,6 +108,40 @@ Batch a CSV/JSON of rows with `--rows file.csv`, skip rows missing a field with
 `--require domain`, get raw JSON with `--json`. Full flag reference: `bun run cli -- --help`
 and `docs/architecture.md` (CLI).
 
+## From Claude Code (the core use)
+
+The point of openclaygent is to be the **per-row web-research primitive an agent reaches
+for** — not a chat you babysit. With `--json` the CLI prints a clean `RunResult` to stdout
+and nothing else, so Claude Code (or any coding agent) drives it as a plain Bash tool:
+hand it a brief + a row, read back typed, cited JSON, act on it.
+
+Why shell out instead of doing the research inline:
+
+- **Context stays clean** — 500 rows of search/fetch noise never touch the agent's
+  conversation. Each call is isolated; only the compact JSON result comes back.
+- **Cited and typed** — the agent gets `result` + `sources` it can trust and quote, not a
+  prose answer it has to re-parse.
+- **Cheap model on the grunt work** — the research loop runs on DeepSeek (or whatever you
+  set) while your agent stays on its own model. Bring-your-own keys, no Clay credit margin.
+
+A single lookup the agent can run and parse:
+
+```bash
+bun run cli -- --json \
+  --instructions "Does this company offer a free trial? Check their pricing page." \
+  --template "Company: {{company}}\nWebsite: {{domain}}" \
+  --schema '{"free_trial":"boolean","evidence_url":"string?","confidence":"low|medium|high"}' \
+  --input company=Linear --input domain=linear.app
+# → { "result": { "free_trial": true, "evidence_url": "https://linear.app/pricing", ... },
+#     "sources": [...], "tokens": {...}, "model": "deepseek/deepseek-chat" }
+```
+
+Batch the same way — `--rows leads.csv --out enriched.json` — and the agent hands you one
+`RunResult` per row to merge back into the table. (`--json` puts warnings on stderr, so
+stdout stays a clean pipe.) A first-class wrapper — an MCP server / `POST /run` endpoint so
+it's a registered tool rather than a shell-out — is the natural next step; see
+`docs/roadmap.md` (Interfaces).
+
 ## Define your own action
 
 Save a reusable action as JSON and run it over any row file:
