@@ -44,55 +44,65 @@ flowchart TB
 
   subgraph FETCH ["Fetch — read a page (always live)"]
     direction TB
-    F1["impit · free"] -->|blocked| F2["patchright · free"] -->|blocked| F3["+ residential proxy · free"] -->|blocked| F4["+ Turnstile solver · free"] -->|fail| F5["Tavily /extract · credit"]
+    F1["impit · free"] -->|blocked| F2["patchright · free"] -->|blocked| F3["+ residential proxy · paid (Evomi)"] -->|blocked| F4["+ Turnstile solver · free click, paid fallback (CapSolver)"] -->|fail| F5["Tavily /extract · credit"]
   end
 
   classDef io fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a;
   classDef free fill:#dcfce7,stroke:#22c55e,color:#14532d;
   classDef paid fill:#fef3c7,stroke:#f59e0b,color:#92400e;
   class A,OUT io
-  class S1,F1,F2,F3,F4 free
-  class S2,S3,F5 paid
+  class S1,F1,F2 free
+  class S2,S3,F3,F4,F5 paid
 ```
 
-Green = free rung, amber = paid (a search credit or extract call).
+Green = free rung, amber = paid. The Turnstile **click** is free (a real browser ticks the
+checkbox and the widget issues its own token); only the CapSolver fallback and the Evomi
+proxy cost money — and those aren't metered in `RunResult.cost`, which tracks only the
+LLM, Exa, Apify, and Tavily.
 
 ## Setup
 
+Cost is the whole point — so the core setup is the **free, self-hosted search + fetch stack**.
+You bring one key (the model); SearXNG and patchright do the web work for free. Paid providers
+are extensions you only reach when the free rungs miss.
+
 ```bash
 bun install
-cp .env.example .env    # then fill in the keys below
+cp .env.example .env          # add OPENROUTER_API_KEY
+docker compose up -d          # SearXNG (free search) + patchright (free fetch) — the cost core
 ```
 
-**You need two keys to start** (no Docker, no other setup):
+**Required** — one key, the model brain:
 
 | Variable | What it's for | Get one |
 |---|---|---|
-| `OPENROUTER_API_KEY` | The model brain — one key drives any model (DeepSeek, Claude, GPT, Llama) | [openrouter.ai/keys](https://openrouter.ai/keys) |
-| `EXA_API_KEY` | Web search — how it finds the pages to read (fetching them is free via the built-in rungs) | [dashboard.exa.ai](https://dashboard.exa.ai/api-keys) |
+| `OPENROUTER_API_KEY` | Drives any model (DeepSeek default — cheap; Claude/GPT/Llama per run) | [openrouter.ai/keys](https://openrouter.ai/keys) |
 
-That's enough to run. DeepSeek is the default model (cheap); swap per run with `--model`.
+**The free stack** — essential to the cost story, started by `docker compose up`:
 
-> Prefer **free** search + fetch over paying Exa? Run `docker compose up -d` (starts a local
-> SearXNG + a headless-browser fetch service) and set `SEARXNG_URL` + `PATCHRIGHT_URL`. Then
-> `EXA_API_KEY` becomes optional — it's just the paid search fallback. See `docs/architecture.md`.
+| Variable | What it does |
+|---|---|
+| `SEARXNG_URL` | Free self-hosted search — the first (and usually only) search rung |
+| `PATCHRIGHT_URL` | Free headless-browser fetch for JS-heavy / bot-walled pages |
 
-**Everything else is optional** — it only changes cost, reach, or adds tools:
+**Paid extensions** — optional; each only fires when the free rung above it misses:
 
 | Variable | Default | What it adds |
 |---|---|---|
-| `OPENCLAY_MODEL` | `deepseek/deepseek-chat` | Default model id (override per run with `--model`) |
-| `SEARXNG_URL` | – | Free self-hosted search, tried first (from `docker compose up`) — saves Exa credits |
-| `PATCHRIGHT_URL` | – | Free headless-browser fetch for JS-heavy / bot-walled pages (from `docker compose up`) |
-| `TAVILY_API_KEY` | – | Last-resort search + page extract when SearXNG and Exa both miss |
-| `TAVILY_USD_PER_CREDIT` | `0.008` | Tunes the cost report to your Tavily plan |
+| `EXA_API_KEY` | – | Paid search fallback after SearXNG (also lets you skip Docker — see below) |
+| `TAVILY_API_KEY` | – | Last-resort search rung + the live `fetch_page` fallback |
 | `APIFY_API_TOKEN` | – | Enables the `linkedin_*` tools (profiles, posts, company data) |
-| `PORT` | `8080` | Port for the HTTP API (`bun run api`) |
 | `EVOMI_*` · `CAPSOLVER_API_KEY` | – | Residential proxy + captcha solver for the toughest anti-bot pages |
+| `OPENCLAY_MODEL` | `deepseek/deepseek-chat` | Default model id (override per run with `--model`) |
+| `TAVILY_USD_PER_CREDIT` | `0.008` | Tunes the cost report to your Tavily plan |
+| `PORT` | `8080` | Port for the HTTP API (`bun run api`) |
 
-The search and fetch ladders try the cheapest rung you've configured first and only fall
-through to a paid one when it's unset or fails — so an unset key is simply a skipped rung,
-never an error.
+> **No-Docker quick try:** set `EXA_API_KEY` and skip `docker compose` — Exa does search and the
+> built-in `impit` rung does fetch, zero infra. Fast to start, but you pay Exa per search; add
+> the free stack to make runs (nearly) free.
+
+The ladders try the cheapest configured rung first and fall through only on miss/fail — an
+unset key is a skipped rung, never an error.
 
 ## Use it: CLI
 
