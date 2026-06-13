@@ -241,8 +241,8 @@ through `core/schema.ts`).
 
 ## Driving it from an agent
 
-The primary use is as a research primitive a coding agent (Claude Code) reaches for, via the
-CLI's `--json` mode or `POST /run`, rather than researching inline. Three reasons it is worth
+The primary use is as a research primitive any agent or script reaches for, via the CLI's
+`--json` mode or `POST /run`, rather than researching inline. Three reasons it is worth
 shelling out instead:
 
 - **Context stays clean.** A 500-row run's search and fetch traffic never enters the agent's
@@ -255,7 +255,9 @@ shelling out instead:
 
 ## Scope
 
-This is the single action loop only — about 80% of Claygent's value. Deliberately not
-built: waterfall (ranked-provider fallback), recipe (multi-step chains), model-tiers,
-batch-over-Neon. The vault note `projects/claygent_clone/` holds the full architecture
-these extend toward.
+This is the single action loop, exposed as a CLI and an HTTP API — about 80% of Claygent's
+value. The cheapest-first provider **ladders** for search and fetch are built (see The tools);
+what is deliberately not built is the catalog's composable primitives: `waterfall` (user-ranked
+providers per action, distinct from the internal search/fetch ladders), `recipe` (multi-step
+chains), model-tiers, and batch-over-Neon. The vault note `projects/claygent_clone/` holds the
+full architecture these extend toward.
