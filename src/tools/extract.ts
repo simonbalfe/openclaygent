@@ -216,3 +216,52 @@ function pruneMarkdown(html: string, baseUrl?: string): string {
 export function htmlToMarkdown(html: string, baseUrl?: string): string {
   return readabilityMarkdown(html, baseUrl) ?? pruneMarkdown(html, baseUrl);
 }
+
+function tokenize(s: string): string[] {
+  return s.toLowerCase().match(/[a-z0-9]+/g) ?? [];
+}
+
+function bm25Scores(chunks: string[], query: string): number[] {
+  const k1 = 1.5;
+  const b = 0.75;
+  const docs = chunks.map(tokenize);
+  const n = docs.length;
+  const avgLen = docs.reduce((sum, d) => sum + d.length, 0) / (n || 1);
+  const df = new Map<string, number>();
+  for (const d of docs) for (const t of new Set(d)) df.set(t, (df.get(t) ?? 0) + 1);
+  const idf = (t: string) => Math.log(1 + (n - (df.get(t) ?? 0) + 0.5) / ((df.get(t) ?? 0) + 0.5));
+  const qTerms = [...new Set(tokenize(query))];
+  return docs.map((d) => {
+    const len = d.length || 1;
+    const tf = new Map<string, number>();
+    for (const t of d) tf.set(t, (tf.get(t) ?? 0) + 1);
+    let score = 0;
+    for (const t of qTerms) {
+      const f = tf.get(t) ?? 0;
+      if (f) score += idf(t) * ((f * (k1 + 1)) / (f + k1 * (1 - b + (b * len) / avgLen)));
+    }
+    return score;
+  });
+}
+
+export function fitToBudget(markdown: string, query: string | undefined, maxChars: number): string {
+  if (markdown.length <= maxChars) return markdown;
+  if (!query?.trim()) return `${markdown.slice(0, maxChars)}\n\n[truncated — long page, no focus query]`;
+  const chunks = markdown.split(/\n{2,}/).map((c) => c.trim()).filter(Boolean);
+  if (chunks.length <= 1) return `${markdown.slice(0, maxChars)}\n\n[truncated — long page]`;
+  const scores = bm25Scores(chunks, query);
+  const ranked = chunks
+    .map((c, i) => ({ i, c, s: scores[i] ?? 0 }))
+    .filter((x) => x.s > 0)
+    .sort((a, b) => b.s - a.s);
+  const picked: { i: number; c: string }[] = [];
+  let used = 0;
+  for (const x of ranked) {
+    if (used + x.c.length + 2 > maxChars) continue;
+    picked.push(x);
+    used += x.c.length + 2;
+  }
+  if (!picked.length) return `${markdown.slice(0, maxChars)}\n\n[truncated — long page]`;
+  picked.sort((a, b) => a.i - b.i);
+  return `${picked.map((p) => p.c).join("\n\n")}\n\n[long page — showing the ${picked.length} sections most relevant to: ${query}]`;
+}

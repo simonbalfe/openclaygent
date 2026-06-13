@@ -38,6 +38,8 @@ const BEHAVIOUR = [
   "",
   "Searching:",
   "- Prefer search snippets. Only call fetch_page when you need a specific page's full text.",
+  "- When you fetch_page, pass `query` describing the fact you want — long pages are reduced to",
+  "  the sections most relevant to it, so a precise query beats getting a blind truncation.",
   "- Always include the entity name in queries. When the task is about a specific company,",
   "  scope queries to its site (site:domain.com <topic>) before searching the open web.",
   "- Never rerun a query that already ran. If results were thin, change the angle, not the wording.",

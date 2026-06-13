@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { htmlToMarkdown } from "../src/tools/extract.ts";
+import { fitToBudget, htmlToMarkdown } from "../src/tools/extract.ts";
 
 const PAGE = `<html><body>
   <nav><a href="/">Home</a><a href="/about">About</a><a href="/blog">Blog</a></nav>
@@ -49,4 +49,26 @@ test("htmlToMarkdown keeps same-domain links, flattens external ones", () => {
 test("htmlToMarkdown handles empty input", () => {
   expect(htmlToMarkdown("")).toBe("");
   expect(htmlToMarkdown("<html><body></body></html>")).toBe("");
+});
+
+test("fitToBudget returns small pages untouched", () => {
+  const md = "A short page. Nothing to filter.";
+  expect(fitToBudget(md, "anything", 12000)).toBe(md);
+});
+
+test("fitToBudget keeps the query-relevant section of a long page, not the head", () => {
+  const filler = Array.from({ length: 60 }, (_, i) => `Section ${i}: notes on weather and sports, item ${i}.`);
+  const fact = "Funding: the company raised a $42 million Series B led by Acme Ventures in 2023.";
+  const big = [...filler.slice(0, 45), fact, ...filler.slice(45)].join("\n\n");
+  const fit = fitToBudget(big, "funding series B round raised", 400);
+  expect(fit).toContain("$42 million Series B");
+  expect(big.slice(0, 400)).not.toContain("$42 million Series B");
+  expect(fit.length).toBeLessThan(big.length);
+});
+
+test("fitToBudget falls back to head truncation when no query", () => {
+  const big = "x".repeat(20000);
+  const out = fitToBudget(big, undefined, 1000);
+  expect(out.length).toBeLessThan(big.length);
+  expect(out).toContain("truncated");
 });

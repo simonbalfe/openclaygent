@@ -25,7 +25,9 @@ the gap it closes (vs Clay's Claygent and the Ferret reference).
 - [x] Per-run + per-step cost — exact USD per provider in `RunResult.cost` (`{ total, llm, tools, byProvider, tavilyCredits }`) and per paid tool step in `agentLog[].cost`. All figures are real, not estimated: OpenRouter via a fetch-tap on the per-run provider (captures every LLM call including the separate structuring call), Exa via `costDollars.total`, Apify via the run's `usageTotalUsd` (async start→poll→read), Tavily via `includeUsage` credits × `TAVILY_USD_PER_CREDIT`. Self-hosted rungs (SearXNG, impit, patchright) are $0. CLI prints it per row and as a table total. See `decisions.md` (Cost accounting).
 - [ ] Per-request caching — re-search / re-fetch of the same query/URL is free
 - [ ] Context compaction — truncate old tool results so long runs don't grow tokens quadratically
-- [ ] Page read windows (offset) + section targeting — `fetch_page` returns one `PAGE_CAP` slice with no signal that content was cut; add an `offset` (page forward) and heading-index/section selection so the agent can read big pages in parts or jump to a section, plus `{ totalChars, truncated }` metadata
+- [x] Large-page reduction — `fetch_page` takes a `query`; over-cap pages are BM25-ranked by chunk and reduced to the most relevant sections (`fitToBudget`, `extract.ts`), not head-truncated. Free/local/lexical. Mechanism in `decisions.md` (Large pages)
+- [ ] Semantic rerank upgrade — when lexical BM25 misses (query phrased unlike the page), add an embeddings or cross-encoder reranker over the page chunks (paid model / local infra — only if BM25 proves insufficient on real runs)
+- [ ] Page read windows (offset) + section targeting — let the agent page forward through a long page or jump to a heading-indexed section, plus `{ totalChars, truncated }` metadata (complements the BM25 reduction for when it wants more, not just the most-relevant slice)
 - [ ] Retry/backoff on provider 429/5xx — currently a single repair retry only
 
 ## Primitives (the catalog gap)

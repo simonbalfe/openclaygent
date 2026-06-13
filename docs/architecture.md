@@ -122,6 +122,12 @@ is recorded without global state:
   the live-data priority (see decisions.md, Fetch ladder). Capped at a bounded read window.
   Only used when snippets are insufficient.
 
+Long pages are reduced, not blind-truncated: `fetch_page` takes an optional `query`, and when
+the cleaned markdown exceeds the cap, `fitToBudget` (`extract.ts`) chunks it and keeps the
+**BM25-top sections** for that query (lexical relevance, local, $0) instead of the first N
+chars. It only fires over-cap; small pages pass through whole; with no query it falls back to
+head-truncation. See decisions.md (Large pages).
+
 Cheapest-first: the agent is told to prefer search snippets and only fetch when it needs a
 specific page's full text. Full verbatim examples of what `fetch_page` returns live in
 `docs/examples/` (an index page and a long case-study page, captured live).

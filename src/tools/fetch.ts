@@ -2,7 +2,7 @@ import { createTool } from "@mastra/core/tools";
 import { extractText, getDocumentProxy } from "unpdf";
 import { z } from "zod";
 import { tavilyUsd } from "../core/cost.ts";
-import { htmlToMarkdown } from "./extract.ts";
+import { fitToBudget, htmlToMarkdown } from "./extract.ts";
 import { impit, tavilyClient } from "./providers.ts";
 import { clip, record, type Sink } from "./sink.ts";
 
@@ -91,40 +91,42 @@ export function fetchPageTool(sink: Sink) {
   return createTool({
     id: "fetch_page",
     description:
-      "Fetch the full cleaned text of one or more URLs. Use only when search snippets are insufficient.",
+      "Fetch the full cleaned text of one or more URLs. Use only when search snippets are insufficient. For long pages, pass `query` (what you are looking for) so the tool returns the most relevant sections instead of a blind truncation.",
     inputSchema: z.object({
       urls: z.array(z.string()).min(1).max(4).describe("URLs to read in full."),
+      query: z
+        .string()
+        .optional()
+        .describe("What you are looking for on the page; used to keep the most relevant sections of long pages."),
     }),
     outputSchema: z.object({
       pages: z.array(z.object({ url: z.string(), text: z.string() })),
     }),
-    execute: async ({ urls }) => {
-      const pages: { url: string; text: string; via: string; tavilyCredits: number }[] =
+    execute: async ({ urls, query }) => {
+      const raw: { url: string; text: string; via: string; tavilyCredits: number }[] =
         await Promise.all(
           urls.map(async (url: string) => {
           const local = await impitFetch(url);
-          if (usable(local)) return { url, text: local.slice(0, PAGE_CAP), via: "impit", tavilyCredits: 0 };
+          if (usable(local)) return { url, text: local, via: "impit", tavilyCredits: 0 };
 
           const rendered = await patchrightFetch(url);
-          if (usable(rendered)) return { url, text: rendered.slice(0, PAGE_CAP), via: "patchright", tavilyCredits: 0 };
+          if (usable(rendered)) return { url, text: rendered, via: "patchright", tavilyCredits: 0 };
 
           const proxied = await patchrightFetch(url, { proxy: true });
-          if (usable(proxied))
-            return { url, text: proxied.slice(0, PAGE_CAP), via: "patchright+proxy", tavilyCredits: 0 };
+          if (usable(proxied)) return { url, text: proxied, via: "patchright+proxy", tavilyCredits: 0 };
 
           const solved = await patchrightFetch(url, { proxy: true, solve: true });
-          if (usable(solved))
-            return { url, text: solved.slice(0, PAGE_CAP), via: "patchright+solver", tavilyCredits: 0 };
+          if (usable(solved)) return { url, text: solved, via: "patchright+solver", tavilyCredits: 0 };
 
           const tav = await tavilyExtractFetch(url);
-          if (usable(tav.text))
-            return { url, text: tav.text.slice(0, PAGE_CAP), via: "tavily", tavilyCredits: tav.credits };
+          if (usable(tav.text)) return { url, text: tav.text, via: "tavily", tavilyCredits: tav.credits };
 
           const best = tav.text || solved || proxied || rendered || local;
           const via = tav.text ? "tavily" : rendered ? "patchright" : "impit";
-          return { url, text: best.slice(0, PAGE_CAP), via, tavilyCredits: tav.credits };
+          return { url, text: best, via, tavilyCredits: tav.credits };
         }),
       );
+      const pages = raw.map((p) => ({ ...p, text: fitToBudget(p.text, query, PAGE_CAP) }));
       for (const p of pages) sink.sources.add(p.url);
       let tavilyCredits = 0;
       for (const p of pages) tavilyCredits += p.tavilyCredits;

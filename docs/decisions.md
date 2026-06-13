@@ -270,6 +270,25 @@ Stop prompt hook that flags a `src/`, compose, or `patchright/` change landing w
 owning doc. No hook scripts to maintain. Escalate to a real pre-commit diff check only if
 drift survives the nudge.
 
+## Large pages: BM25 relevance, not a bigger cap
+
+A long page can't be dumped into the agent (context blow-up) and can't be head-truncated
+safely (the answer might be past the cut). The fix is **retrieval, not truncation**:
+`fitToBudget` (`extract.ts`) only triggers when the cleaned markdown exceeds `PAGE_CAP`, then
+splits it into chunks and keeps the **BM25-top** chunks for the agent's `query` until the
+budget is full — same token bound, but spent on the *relevant* sections instead of the *first*
+ones. Bounded by construction, answer-preserving by relevance.
+
+BM25 (lexical, ~40 lines, no deps) is deliberate over the semantic alternatives: it is free,
+local, instant, and deterministic, and for GTM fact-finding the query terms usually appear
+verbatim on the page (funding, pricing, headcount, names). An embeddings/cross-encoder
+**reranker** is the semantic upgrade for the ~20% where wording differs — but it needs a model
+(paid API or local GPU), so it is deferred until BM25 demonstrably misses. A vector DB is not
+relevant here: it indexes a large corpus for dense first-stage retrieval; one page is ~50
+chunks, so BM25 ranks them directly. Fallbacks: no `query` → head-truncate; ≤1 chunk or no
+positive BM25 hit → head-truncate. Both reduced outputs carry a trailing marker so the agent
+knows it saw a subset.
+
 ## Crunchbase: a fallback-only Apify actor, not a fetch target
 
 Crunchbase is CF-Turnstile-walled, so `fetch_page` can't get it and the behaviour prompt says
