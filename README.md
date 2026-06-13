@@ -25,6 +25,67 @@ output:  { result, sources, agentLog, tokens, durationMs, model }
 This is the single `use-ai` **action** loop — ~80% of Claygent's value. For what's
 deliberately out of scope and the extensions it grows toward, see `docs/architecture.md` (Scope).
 
+## A run, end to end
+
+Say you have a list of companies and want each one's industry, confirmed against the
+company's own site (not a stale directory). You write the brief **once**:
+
+```jsonc
+// the action: a reusable research brief
+{
+  "instructions": "What industry is this company in? Check their website first.",
+  "template":     "Company: {{company}}\nWebsite: {{domain}}",
+  "schema":       { "industry": "string", "confidence": "low|medium|high" }
+}
+```
+
+and point it at a row:
+
+```jsonc
+{ "company": "Linear", "domain": "linear.app" }
+```
+
+The agent fills the template (`Company: Linear / Website: linear.app`), then loops
+reason → tool → observe, recording every step. A typical run:
+
+1. **search** — `web_search("Linear linear.app product industry")`; the SearXNG rung
+   answers, snippets come back. Snippets are often enough, but here it wants the primary
+   source.
+2. **fetch** — `fetch_page("https://linear.app")`; impit pulls the page, the pruning
+   extractor strips nav/footer and hands back ~5k chars of real content as markdown.
+3. **answer** — it has enough, so it stops and emits the final text, which the structuring
+   model shapes into your schema.
+
+What you get back is the **typed, cited** `RunResult` (values illustrative):
+
+```jsonc
+{
+  "result":   { "industry": "Project management & software development tools",
+                "confidence": "high" },
+  "sources":  ["https://linear.app", "https://linear.app/about"],
+  "agentLog": [ /* the search → fetch → answer steps above, each with result previews */ ],
+  "tokens":   { "input": 3140, "output": 88 },
+  "durationMs": 7421,
+  "model":    "deepseek/deepseek-chat"
+}
+```
+
+On the CLI that prints as:
+
+```
+Linear  7.4s · 3140 in / 88 out tok · 2 sources
+  search    "Linear linear.app product industry" [searxng] → 5 results
+  fetch     https://linear.app [impit] → 4812 chars
+  answer
+  industry    Project management & software development tools
+  confidence  high
+
+1 rows · 3140 in / 88 out tok · deepseek/deepseek-chat
+```
+
+Run the **same action** over a 500-row CSV and you get one of these per row — the brief is
+fixed, the row varies. Rows that fail `--require` are skipped before a token is spent.
+
 ## Setup
 
 ```bash
