@@ -107,11 +107,23 @@ Playwright's server (Node connects fine); the HTTP seam also keeps `patchright` 
 this package entirely. Each rung auto-skips when its env is unset (`PATCHRIGHT_URL`, `EVOMI_*`).
 Step log records the winning rung as `via: impit | patchright | patchright+proxy`.
 
-A fourth rung, `&solve=1`, calls CapSolver (`CAPSOLVER_API_KEY`) from inside the proxied
-fetch: fresh sticky Evomi session per fetch (`password_session-<rand>` — rotates across
-fetches, pins one IP for the solve+reload), `AntiCloudflareTask` with that same proxy, then
-the returned `cf_clearance` cookie + user-agent are set on a new context and the page is
-reloaded through the same IP. `via: patchright+solver`.
+A fourth rung, `&solve=1`, handles the two challenge shapes separately, free-first:
+
+- **Embedded Turnstile widget** (a `cf-turnstile` div with a `data-sitekey` on an otherwise
+  reachable page — the Crunchbase / G2-form shape). `solveTurnstile` first does a **free
+  interactive click**: locate the widget, human-like mouse move, click the checkbox so the
+  widget runs the site's own success callback and self-issues a real token into
+  `cf-turnstile-response`. Only if the click leaves no token does it fall back to CapSolver
+  `AntiTurnstileTaskProxyless` (solve the sitekey → inject the token → fire the callback /
+  submit the form). The click alone solves the WebUnlocker arena Level 2 live sitekey in
+  ~8s for $0 (verified: 752-char real token where the pre-build render had none).
+- **Full interstitial** (`just a moment` / `cf-browser-verification` — the whole page is the
+  challenge). `capsolve` calls CapSolver `AntiCloudflareTask` with the sticky Evomi session
+  (`password_session-<rand>` — rotates across fetches, pins one IP for the solve+reload);
+  the returned `cf_clearance` cookie + user-agent are set on a new context and the page is
+  reloaded through the same IP.
+
+`via: patchright+solver` for both.
 
 When all of the above fail, two **paid** content rungs run as last resort, in cost order:
 **Exa `/contents`** (`via: exa`, official `exa-js` SDK, `EXA_API_KEY`) then **Tavily `/extract`**
@@ -134,22 +146,30 @@ requirements; headless or a custom viewport reintroduces automation tells. Conta
 `security_opt: seccomp:unconfined` (headed Chrome creates user namespaces
 for its sandbox) and a launch-retry (Xvfb isn't warm at boot — first launch can reject).
 
-Tested, honestly — and none of G2/Crunchbase reads yet:
+Tested, honestly — the embedded-Turnstile shape (Crunchbase) is now solved on a test arena,
+G2's DataDome is not:
 - Proxy rung verified working — exit IP changes to residential (ipify confirms). Sticky
   session format `password_session-<id>` confirmed (same id → same IP, new id → new IP).
 - Headed Xvfb verified working (browser launches, renders, self-heals at boot) but did NOT
   crack either site on its own. Necessary, not sufficient.
 - G2 (DataDome): 2543-byte CAPTCHA every time, headed + residential. One lucky 559KB hit once,
   never reproduced.
-- Crunchbase (Cloudflare): a `cf-turnstile` / `cf-chl-widget` managed challenge with an
-  embedded **interactive** Turnstile — it needs the checkbox *clicked* (shadow-root traversal,
-  SeleniumBase-UC style), which neither waiting nor a headed render does. CapSolver's
-  `AntiCloudflareTask` (the matching solver) was under maintenance at build time, so the solve
-  rung is wired but unproven.
+- Embedded interactive Turnstile (the Crunchbase shape: `cf-turnstile` widget on a reachable
+  page) is now **solved by the free click rung** — `solveTurnstile` clicks the checkbox and the
+  widget self-issues a real token. Verified against the WebUnlocker arena Level 2 live sitekey
+  (~8s, $0, 752-char token). End-to-end against Crunchbase itself not yet run; the click drives
+  the site's own callback, so the token is wired the way the real target consumes it.
+- G2 (DataDome): 2543-byte CAPTCHA every time, headed + residential. One lucky 559KB hit once,
+  never reproduced. DataDome is **not** Turnstile — the click rung does not apply; this still
+  needs a DataDome-specific solver or the Exa-cache fallback.
+- Earlier the only solver was CapSolver `AntiCloudflareTask`, which targets full interstitials,
+  not embedded widgets — wrong tool for Crunchbase, and the 2026-06 arena test confirmed it was
+  being skipped entirely on the widget shape. That gap is what the Turnstile rung above closes.
 
-Realistic next levers (not yet built): click the Turnstile checkbox in the closed shadow root;
-or self-host Byparr/FlareSolverr (90%+ on CF in benchmarks) as the solver rung instead of
-depending on CapSolver uptime. The solver rung auto-skips without `CAPSOLVER_API_KEY`.
+Realistic next levers (not yet built): self-host Byparr/FlareSolverr (90%+ on CF in benchmarks)
+as a solver rung independent of CapSolver uptime; a DataDome-specific solver for the G2 shape;
+caching a solved token / `cf_clearance` per domain so a wall is cracked once, not per row. The
+CapSolver fallbacks auto-skip without `CAPSOLVER_API_KEY`.
 
 Why not an off-the-shelf extractor: Mozilla Readability and friends are article-tuned and
 benchmark poorly on exactly our page types (product/pricing/service pages — F1 ~0.4–0.6 vs
