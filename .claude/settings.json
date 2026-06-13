@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "echo 'Doc ownership: docs/architecture.md owns the file map, tools, and scope; docs/decisions.md owns the gotchas; docs/roadmap.md owns the feature checklist; .env.example owns the env var list. A code change updates its owning doc in the same turn.'"
+            "command": "echo 'Doc ownership: docs/architecture.md owns the file map, tools, and scope; docs/decisions.md owns the gotchas; docs/roadmap.md owns the feature checklist; .env.example owns the env var list; README.md owns the front-door overview (setup, quickstart, how-it-works). A code change updates its owning doc in the same turn.'"
           }
         ]
       }

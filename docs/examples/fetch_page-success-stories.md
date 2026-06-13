@@ -1,6 +1,6 @@
 # fetch_page example: https://www.lemlist.com/success-stories
 
-Verbatim `text` field returned by the `fetch_page` tool (tier: impit, 1028 chars, cap 12000). Captured live on 2026-06-12.
+Verbatim `text` field returned by the `fetch_page` tool (tier: impit, 1028 chars, cap: PAGE_CAP). Captured live on 2026-06-12.
 
 ---
 

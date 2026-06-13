@@ -142,6 +142,7 @@ See `docs/architecture.md` (HTTP API) for the full request/response shape.
 
 ## Docs
 
+- `docs/walkthrough.md` — a plain-language tour of the whole flow and *why* each step works the way it does. Start here.
 - `docs/architecture.md` — how it works: the action, the loop, the contract, the file map.
 - `docs/decisions.md` — the non-obvious choices and the conventions that bite.
 - `docs/roadmap.md` — what's shipped and what's next.
