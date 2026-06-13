@@ -32,23 +32,17 @@ The agent loops — reason, pick a tool, observe — until it can answer. Its tw
 a paid one when that misses or fails. An unset key is just a skipped rung.
 
 ```mermaid
-flowchart TB
-  IN(["Brief + Row"]) --> A{{"Agent loop<br/>reason → act → observe"}}
-  A -->|web_search| S
-  A -->|fetch_page| F
-  S -->|snippets| A
-  F -->|page text| A
-  A -->|answer| OUT(["Typed, cited JSON<br/>· sources · cost"])
+flowchart LR
+  IN(["Brief + Row"]) --> A["Agent loop<br/>reason → act → observe"] --> OUT(["Typed, cited JSON<br/>sources · cost"])
+  A -. web_search .-> S["Search<br/>SearXNG → Exa → Tavily"]
+  A -. fetch_page .-> F["Fetch<br/>impit → patchright → Exa → Tavily"]
 
-  subgraph S ["Search waterfall — first hit wins"]
-    direction LR
-    S1["SearXNG<br/>free"] -->|miss| S2["Exa<br/>paid"] -->|miss| S3["Tavily<br/>paid"]
-  end
-
-  subgraph F ["Fetch waterfall — first usable page wins"]
-    direction LR
-    F1["impit<br/>free"] -->|blocked| F2["patchright browser<br/>free"] -->|fail| F3["Exa /contents<br/>paid"] -->|fail| F4["Tavily /extract<br/>paid"]
-  end
+  classDef io fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a;
+  classDef agent fill:#ede9fe,stroke:#a78bfa,color:#4c1d95;
+  classDef tool fill:#dcfce7,stroke:#4ade80,color:#14532d;
+  class IN,OUT io;
+  class A agent;
+  class S,F tool;
 ```
 
 ## Setup
