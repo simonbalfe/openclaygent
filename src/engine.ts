@@ -71,7 +71,7 @@ export async function run<S extends z.ZodType>(
       {
         maxSteps: opts.maxSteps ?? 5,
         modelSettings: { maxOutputTokens: opts.maxOutputTokens ?? 1500 },
-        structuredOutput: { schema: action.output, model: structuringModel },
+        structuredOutput: { schema: action.output, model: structuringModel, errorStrategy: "warn" },
       },
     )) as Generated<S>;
     result = res.object ?? null;

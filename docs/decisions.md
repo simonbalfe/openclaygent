@@ -53,6 +53,16 @@ re-asks with a nudge to return the JSON using what was already found. In testing
 turned an intermittent 2/3 success rate into a consistent 3/3. The vault calls this "the
 line between usually works and reliable across thousands of rows."
 
+`structuredOutput` is passed `errorStrategy: "warn"` — Mastra's own control for a schema
+validation failure (`'strict' | 'warn' | 'fallback'`, default `'strict'`). The default
+**throws** and would crash the whole row on a malformed answer (wrong type, illegal enum);
+`'warn'` logs and yields no object instead, so `res.object ?? null` falls through to the
+repair retry rather than erroring. We let Mastra own validation (don't re-`safeParse` what
+it already checked); the only thing we add on top is the nudge-retry, which Mastra's
+structured output doesn't do. A fuller-native path — an output processor with
+`maxProcessorRetries` — could replace the manual loop later, but the loop is openclaygent's
+specific behaviour and small.
+
 ## Per-run tools and the Sink
 
 Tools are built fresh inside each `run` and closed over a `Sink` (`{ sources, log }`)
