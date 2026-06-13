@@ -1,13 +1,14 @@
 import type { z } from "zod";
 import { buildAgent, DEFAULT_MODEL } from "./agent.ts";
 import { emptyCost, tavilyUsd } from "./cost.ts";
-import { record, type Sink } from "./tools/web.ts";
+import { record, type Sink } from "../tools/sink.ts";
 import type { Action, AgentStep, Row, RunCost, RunResult } from "./types.ts";
 
 export interface RunOptions {
   model?: string;
   maxSteps?: number;
   maxOutputTokens?: number;
+  concurrency?: number;
   onStep?: (step: AgentStep) => void;
 }
 
@@ -117,9 +118,15 @@ export async function runTable<S extends z.ZodType>(
   rows: Row[],
   opts: RunOptions = {},
 ): Promise<RunResult<S>[]> {
-  const results: RunResult<S>[] = [];
-  for (const row of rows) {
-    results.push(await run(action, row, opts));
+  const limit = Math.max(1, opts.concurrency ?? 5);
+  const results = new Array<RunResult<S>>(rows.length);
+  let next = 0;
+  async function worker(): Promise<void> {
+    while (next < rows.length) {
+      const i = next++;
+      results[i] = await run(action, rows[i]!, opts);
+    }
   }
+  await Promise.all(Array.from({ length: Math.min(limit, rows.length) }, worker));
   return results;
 }

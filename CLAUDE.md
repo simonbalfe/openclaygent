@@ -8,7 +8,8 @@ its env is unset) — mechanism and rung order in `docs/architecture.md` (The to
 
 ## Run it
 
-- `bun run cli -- --help` — the CLI, the only runtime entry (`src/cli.ts`); see `docs/architecture.md` (CLI).
+- `bun run cli -- --help` — the CLI entry (`src/cli.ts`); see `docs/architecture.md` (CLI).
+- `bun run api` — the HTTP entry (`src/api.ts`, Hono + OpenAPI): `POST /run`, `/docs`, `/openapi.json`, `/health` on `PORT` (default 8080). Both entries share `core/action.ts` + `runTable` — never duplicate run logic into either. See `docs/architecture.md` (HTTP API).
 - `bun test` — the test suite (`tests/`); the live test is skipped unless `RUN_LIVE=1`.
 - `bun run typecheck` — `tsc --noEmit`.
 - `bun run knip` — dead-code / unused-export / unused-dep check (config: `knip.json`; entries are the CLI (auto-detected from package.json) + tests).
@@ -18,11 +19,14 @@ its env is unset) — mechanism and rung order in `docs/architecture.md` (The to
 
 ## Key files
 
-- `src/types.ts` — `Action` primitive + `RunResult` contract.
-- `src/engine.ts` — `run` (one row), `runTable` (a table).
-- `src/agent.ts` + `src/tools/web.ts` — Mastra agent + `web_search`/`fetch_page`.
-- `src/cost.ts` — per-provider cost accumulator + OpenRouter response cost extractor (exact-USD reporting).
-- `src/cli.ts` + `src/schema.ts` — CLI front end + JSON-Schema/short-form → Zod builder.
+- `src/core/types.ts` — `Action` primitive + `RunResult` contract.
+- `src/core/engine.ts` — `run` (one row), `runTable` (a table).
+- `src/core/agent.ts` — Mastra agent + cost-tapped OpenRouter provider.
+- `src/core/action.ts` — `ActionSpec` + `buildAction`, the shared adapter both frontends call (no duplicated assembly); `src/core/schema.ts` — JSON-Schema/short-form → Zod builder.
+- `src/tools/` — one concern per file: `web.ts` (assembler) · `search.ts` (`web_search` + ladder) · `fetch.ts` (`fetch_page` + ladder) · `providers.ts` (exa/tavily/impit clients) · `sink.ts` (`Sink`/`record`/`clip`) · `extract.ts` · `linkedin.ts`.
+- `src/core/cost.ts` — per-provider cost accumulator + OpenRouter response cost extractor (exact-USD reporting).
+- `src/cli.ts` (CLI entry) + `src/cli/` (`args.ts` parse · `input.ts` rows/action/options · `render.ts` output).
+- `src/api.ts` — HTTP entry (Hono + `@hono/zod-openapi`): `POST /run`, `/openapi.json`, `/docs`, `/health`.
 - `tests/` — `bun test` suite (schema, skip path, template fill, extractor, search ladder; live opt-in).
 
 ## Docs (read before changing code)

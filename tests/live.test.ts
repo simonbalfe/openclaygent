@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { z } from "zod";
-import { run } from "../src/engine.ts";
-import { defineAction } from "../src/types.ts";
+import { run } from "../src/core/engine.ts";
+import { defineAction } from "../src/core/types.ts";
 
 const live = test.skipIf(!process.env.RUN_LIVE);
 

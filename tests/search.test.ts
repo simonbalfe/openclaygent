@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
-import { searchWeb } from "../src/tools/web.ts";
+import { searchWeb } from "../src/tools/search.ts";
 
 const realFetch = globalThis.fetch;
 const realEnv = {

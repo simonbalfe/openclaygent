@@ -10,13 +10,17 @@
   },
   "scripts": {
     "cli": "bun run src/cli.ts",
+    "api": "bun run src/api.ts",
+    "api:dev": "bun --watch run src/api.ts",
     "test": "bun test",
     "knip": "knip-bun",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@hono/zod-openapi": "^1.4.0",
     "@mastra/core": "^1.41.0",
     "@openrouter/ai-sdk-provider": "^2.9.0",
+    "@scalar/hono-api-reference": "^0.11.3",
     "@tavily/core": "^0.7.6",
     "@types/turndown": "^5.0.6",
     "cheerio": "^1.2.0",

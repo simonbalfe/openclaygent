@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { z } from "zod";
-import { fillTemplate, run } from "../src/engine.ts";
-import { defineAction } from "../src/types.ts";
+import { fillTemplate, run } from "../src/core/engine.ts";
+import { defineAction } from "../src/core/types.ts";
 
 test("fillTemplate substitutes row values and flags missing ones", () => {
   expect(fillTemplate("Hi {{a}} at {{b}}", { a: "x" })).toEqual({

@@ -1,6 +1,6 @@
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
-import { clip, record, type Sink } from "./web.ts";
+import { clip, record, type Sink } from "./sink.ts";
 
 const APIFY = "https://api.apify.com/v2";
 

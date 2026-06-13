@@ -72,17 +72,17 @@ specific behaviour and small.
 Tools are built fresh inside each `run` and closed over a `Sink`
 (`{ sources, log, cost, onStep? }`) rather than reading/writing module-level state. This
 keeps concurrent runs isolated and lets `RunResult` report exactly the URLs, steps, and
-spend that this run produced. `sink.cost` (`CostAccumulator` in `src/cost.ts`) is the
+spend that this run produced. `sink.cost` (`CostAccumulator` in `src/core/cost.ts`) is the
 single place every provider's spend lands during a run.
 
 ## Cost accounting: exact per-provider, no estimates
 
-`RunResult.cost` (`RunCost` in `src/types.ts`) reports real dollars, not a price-table
+`RunResult.cost` (`RunCost` in `src/core/types.ts`) reports real dollars, not a price-table
 guess. Every figure comes from the provider's own reporting. Each paid tool step also
 carries its own USD on `agentLog[].cost`; self-hosted rungs (SearXNG, impit, patchright)
 are $0.
 
-- **OpenRouter (LLM)** — the per-run provider (`buildOpenRouter`, `src/agent.ts`) is
+- **OpenRouter (LLM)** — the per-run provider (`buildOpenRouter`, `src/core/agent.ts`) is
   created with `extraBody: { usage: { include: true } }` and a `fetch` wrapper (`tapCost`)
   that reads `usage.cost` off **every** response and adds it to `sink.cost.openrouter`.
   This is why the provider is per-run and shared by both the agent and the structuring
@@ -242,3 +242,18 @@ minimal scriptless pair: a SessionStart pointer naming which doc owns which fact
 Stop prompt hook that flags a `src/`, compose, or `patchright/` change landing without its
 owning doc. No hook scripts to maintain. Escalate to a real pre-commit diff check only if
 drift survives the nudge.
+
+## Two frontends, one core — never duplicate run logic
+
+The CLI (`src/cli.ts`) and the HTTP API (`src/api.ts`) are both thin adapters over the same
+core. Each turns its own input format into an `ActionSpec` + rows + `RunOptions`, then calls
+`buildAction` (`core/action.ts`) and `runTable`. The rule that bites: action assembly,
+schema building, the agent loop, and cost accounting live in `core/`, never in a frontend.
+If you find yourself writing `defineAction` or `buildSchema` inside `cli/` or `api.ts`,
+that logic belongs in `core/action.ts` so both paths share it. Frontends never import each
+other.
+
+The API is `@hono/zod-openapi`, not plain Hono: the request/response zod schemas are the
+single source of truth — they validate the body (malformed → `400` before the handler) *and*
+generate `/openapi.json` (served as a Scalar reference at `/docs`). A hand-written spec, or manual
+`safeParse` in the handler, would be a second source of truth that drifts.

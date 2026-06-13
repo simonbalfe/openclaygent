@@ -42,7 +42,8 @@ the gap it closes (vs Clay's Claygent and the Ferret reference).
 
 ## Interfaces
 
-- [ ] HTTP `POST /run` endpoint (`Bun.serve`) — single via `inputs`, batch via `rows`
+- [x] HTTP `POST /run` endpoint (`src/api.ts`, Hono + `@hono/zod-openapi`) — single via `input`, batch via `rows`; zod-validated body (auto 400), generated `/openapi.json` + Scalar `/docs`. Shares `core/action.ts` + `runTable` with the CLI (no auth yet)
+- [ ] API auth — bearer/API-key gate on `POST /run` before exposing the endpoint publicly
 - [ ] CSV output — write results back as columns appended to the input rows
 - [ ] Clay HTTP-column recipe — documented body shape for dropping it into a Clay table
 
@@ -59,7 +60,7 @@ the gap it closes (vs Clay's Claygent and the Ferret reference).
 
 ## Scale & ops
 
-- [ ] Concurrency in `runTable` — run N rows in parallel with a cap (today it is sequential)
+- [x] Concurrency in `runTable` — run N rows in parallel with a cap (`opts.concurrency`, default 5; CLI `--concurrency <n>`)
 - [ ] Batch over Neon — read rows from / write results to a `leads-hub` schema
 - [ ] Deploy — host the HTTP endpoint so callers hit a URL, not a local script
 

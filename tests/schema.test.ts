@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { buildSchema } from "../src/schema.ts";
+import { buildSchema } from "../src/core/schema.ts";
 
 test("short form: primitives, enum, nullable", () => {
   const s = buildSchema({ industry: "string", confidence: "low|medium|high", note: "string?" });

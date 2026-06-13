@@ -10,7 +10,7 @@ against each row, the agent does the web research, a structuring pass shapes the
 
 ```mermaid
 flowchart LR
-  CLI["CLI<br/>(entry point)"] --> ACT["Action<br/>instructions · template · schema · skip rule"]
+  CLI["CLI / HTTP API<br/>(entry points)"] --> ACT["Action<br/>instructions · template · schema · skip rule"]
   CLI --> ROWS["Row(s)<br/>company · domain · ..."]
   ACT --> ENG
   ROWS --> ENG
@@ -60,7 +60,7 @@ flowchart LR
 
 ## The unit: an action
 
-An **action** (`src/types.ts`, `Action<S>`) is a reusable research brief. It mirrors
+An **action** (`src/core/types.ts`, `Action<S>`) is a reusable research brief. It mirrors
 Clay's `use-ai` action from the catalog. Four parts:
 
 | Field | Role |
@@ -76,16 +76,16 @@ fixed, the row varies.
 
 ## The loop
 
-`run(action, row, opts)` in `src/engine.ts` is the core unit. Flow:
+`run(action, row, opts)` in `src/core/engine.ts` is the core unit. Flow:
 
 1. **Conditional gate** — if `conditionalRun` returns false, return immediately with
    `skipped: true`, zero tokens. This is Clay's #1 credit saver.
 2. **Template fill** — `{{field}}` slots are replaced from the row; missing fields are
    marked `[MISSING:field]` and warned, not failed.
-3. **Agent loop** — a fresh Mastra agent (`src/agent.ts`) runs with two tools and the
+3. **Agent loop** — a fresh Mastra agent (`src/core/agent.ts`) runs with two tools and the
    tuned research behaviour, looping reason → tool → observe until it answers. The system
    context stacks three layers, fixed-first so prompt caching holds across rows: the
-   research doctrine (`BEHAVIOUR` in `src/agent.ts` — search/navigation/evidence/answer
+   research doctrine (`BEHAVIOUR` in `src/core/agent.ts` — search/navigation/evidence/answer
    discipline, our equivalent of Claygent's hidden tuned system prompt), then the action's
    `instructions`, then the templated row task. Doctrine rules lose to action rules on
    conflict.
@@ -97,7 +97,9 @@ fixed, the row varies.
    `cost`, `durationMs`, `model`.
 
 `runTable(action, rows, opts)` runs the loop across a whole table, returning one
-`RunResult` per row.
+`RunResult` per row. Rows run concurrently through a fixed-size worker pool —
+`opts.concurrency` workers (default 5) pull from a shared cursor, so at most N rows are
+in flight at once while results stay in row order.
 
 ## The tools
 
@@ -124,7 +126,7 @@ specific page's full text. Full verbatim examples of what `fetch_page` returns l
 
 ## The contract
 
-Every run returns `RunResult<S>` (`src/types.ts`):
+Every run returns `RunResult<S>` (`src/core/types.ts`):
 
 - `result` — the schema-shaped answer, or null (null when skipped, or when both attempts
   failed to produce structured output).
@@ -141,15 +143,24 @@ Every run returns `RunResult<S>` (`src/types.ts`):
 
 | File | Role |
 |---|---|
-| `src/types.ts` | `Action` primitive, `RunResult` contract, `defineAction` helper |
-| `src/tools/web.ts` | `web_search` (SearXNG→Exa→Tavily ladder) + `fetch_page` (impit→patchright→Exa /contents→Tavily /extract ladder), the per-run `Sink` |
+| `src/core/types.ts` | `Action` primitive, `RunResult` contract, `defineAction` helper |
+| `src/tools/web.ts` | thin assembler — `webTools(sink)` returns `web_search` + `fetch_page` from `search.ts` and `fetch.ts` |
+| `src/tools/search.ts` | `web_search` tool + `searchWeb` (SearXNG→Exa→Tavily ladder) |
+| `src/tools/fetch.ts` | `fetch_page` tool (impit→patchright→Exa /contents→Tavily /extract ladder), `usable` shell-page guard |
+| `src/tools/providers.ts` | shared external clients: the `impit` instance, lazy `exaClient`, lazy `tavilyClient` |
+| `src/tools/sink.ts` | the per-run `Sink` (sources, agent log, cost, `onStep`) + `record`/`clip` helpers, shared by every tool |
 | `src/tools/extract.ts` | pruning extractor — Crawl4AI-port scoring + Turndown GFM render |
 | `src/tools/linkedin.ts` | `linkedin_profile` / `linkedin_posts` / `linkedin_post_reactions` / `linkedin_find_people` / `linkedin_company` (Apify HarvestAPI actors; registered only when `APIFY_API_TOKEN` is set) |
-| `src/agent.ts` | per-run cost-tapped OpenRouter provider (`buildOpenRouter`), default model, research behaviour, `buildAgent` |
-| `src/cost.ts` | `CostAccumulator` + `emptyCost`, Tavily credit→USD rate, `extractCostUsd` (reads `usage.cost` from JSON or SSE OpenRouter responses) |
-| `src/engine.ts` | `run` (one row), `runTable` (a table), template fill, conditional gate, repair retry, `RunCost` assembly |
-| `src/cli.ts` | CLI front end: parse args, build the action, load rows, print results |
-| `src/schema.ts` | `buildSchema` — turn a CLI JSON Schema / short form into the action's Zod `output` |
+| `src/core/agent.ts` | per-run cost-tapped OpenRouter provider (`buildOpenRouter`), default model, research behaviour, `buildAgent` |
+| `src/core/cost.ts` | `CostAccumulator` + `emptyCost`, Tavily credit→USD rate, `extractCostUsd` (reads `usage.cost` from JSON or SSE OpenRouter responses) |
+| `src/core/engine.ts` | `run` (one row), `runTable` (a table), template fill, conditional gate, repair retry, `RunCost` assembly |
+| `src/core/action.ts` | `ActionSpec` (the serialized brief: instructions · template · schema) + `buildAction` — the adapter both frontends call so neither duplicates action assembly |
+| `src/core/schema.ts` | `buildSchema` — turn a JSON Schema / short form into the action's Zod `output` |
+| `src/cli.ts` | CLI entry: wire args → `buildAction` → rows → `runTable` → render |
+| `src/cli/args.ts` | `parseArgs`, `Flags`/`Parsed` types, `HELP` text |
+| `src/cli/input.ts` | `parseCSV`, `loadRows`, `loadActionSpec`, `buildOptions` — flags/files → `ActionSpec` + rows + `RunOptions` |
+| `src/cli/render.ts` | `formatStep`, `money`, `costBreakdown`, `printRow` — terminal presentation |
+| `src/api.ts` | HTTP entry: `@hono/zod-openapi` `POST /run` → `buildAction` → `runTable`, plus `/openapi.json` + Scalar `/docs` + `/health` |
 | `tests/` | `bun test` suite: schema building, skip path, template fill, extractor, search ladder; live test opt-in via `RUN_LIVE` |
 
 ## CLI
@@ -180,14 +191,67 @@ bun run cli -- \
 
 `--schema` accepts **standard JSON Schema** (the conventional interchange — converted to
 Zod at the boundary via `zod-from-json-schema`) **or** a short form for flat outputs:
-`string` | `number` | `boolean` | `a|b|c` (enum) | trailing `?` for nullable. `src/schema.ts`
+`string` | `number` | `boolean` | `a|b|c` (enum) | trailing `?` for nullable. `src/core/schema.ts`
 detects which (a real JSON Schema has `type:"object"`/`properties`) and routes accordingly;
 either way the engine receives a Zod schema. `--json` prints raw JSON; `--out <file>` writes
 results to disk; `--model <id>` overrides the model per run; `--max-steps <n>` caps the agent
-loop iterations (default 5); `--verbose` streams agent steps
+loop iterations (default 5); `--concurrency <n>` sets how many rows run in parallel
+(default 5, wired as `RunOptions.concurrency`); `--verbose` streams agent steps
 live as they happen with result previews — search hits (title, URL, snippet), fetched page
 sizes and text previews (wired as `RunOptions.onStep`, fired by the same `record()` that
 appends to `agentLog`; goes to stderr under `--json` so stdout stays pipeable).
+
+## HTTP API
+
+`src/api.ts` is the second front end — the same engine over HTTP, so openclaygent deploys as
+a Ferret-style endpoint as well as a CLI. It shares **all** logic with the CLI: both call
+`buildAction` (`core/action.ts`) then `runTable`. The API file is pure HTTP wiring — no
+research, schema, or cost logic is re-implemented.
+
+Built on `@hono/zod-openapi`: the request/response shapes are zod schemas, so the body is
+**validated automatically** (a malformed body returns `400` before the handler runs) and the
+**OpenAPI spec is generated from those same schemas** — one source of truth, no hand-written
+spec to drift.
+
+Routes:
+
+- `POST /run` — body is an `ActionSpec` (`instructions` · `template` · `schema`) plus rows
+  (`rows` for a batch, or `input` for one) and options (`model`, `maxSteps`, `concurrency`,
+  `require`). Returns `{ results: RunResult[] }` — one element per row.
+- `GET /openapi.json` — the generated OpenAPI 3 document.
+- `GET /docs` — Scalar API reference over that document (same renderer as creatorcrawl).
+- `GET /health` — liveness check.
+
+Port is `PORT` (default 8080). No auth — front it with whatever the deploy provides if you
+expose it publicly (it spends LLM credits per call).
+
+```bash
+bun run api        # serve on :8080  (bun run api:dev to watch)
+
+curl -s localhost:8080/run -H 'content-type: application/json' -d '{
+  "instructions": "Identify which CRM the company uses.",
+  "template": "Company: {{company}} ({{domain}})",
+  "schema": {"crm":"string?","confidence":"low|medium|high"},
+  "rows": [{"company":"Linear","domain":"linear.app"}]
+}'
+```
+
+The `schema` field takes the same JSON-Schema-or-short-form as the CLI's `--schema` (both go
+through `core/schema.ts`).
+
+## Driving it from an agent
+
+The primary use is as a research primitive a coding agent (Claude Code) reaches for, via the
+CLI's `--json` mode or `POST /run`, rather than researching inline. Three reasons it is worth
+shelling out instead:
+
+- **Context stays clean.** A 500-row run's search and fetch traffic never enters the agent's
+  conversation. Each call is isolated; only the compact `RunResult` comes back.
+- **Cited and typed.** The agent gets `result` plus `sources` it can trust and quote, not a
+  prose answer it has to re-parse.
+- **Cheap model on the grunt work.** The research loop runs on DeepSeek (or whatever `--model`
+  is set to) while the calling agent stays on its own model — bring-your-own keys, no Clay
+  credit margin.
 
 ## Scope
 

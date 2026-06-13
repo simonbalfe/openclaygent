@@ -1,8 +1,9 @@
 import { Agent } from "@mastra/core/agent";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { type CostAccumulator, extractCostUsd } from "./cost.ts";
-import { linkedinTools } from "./tools/linkedin.ts";
-import { webTools, type Sink } from "./tools/web.ts";
+import { linkedinTools } from "../tools/linkedin.ts";
+import { type Sink } from "../tools/sink.ts";
+import { webTools } from "../tools/web.ts";
 
 export const DEFAULT_MODEL = process.env.OPENCLAY_MODEL ?? "deepseek/deepseek-chat";
 
