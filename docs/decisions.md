@@ -123,6 +123,19 @@ validation failure (`'strict' | 'warn' | 'fallback'`, default `'strict'`). The d
 finalization fallback rather than erroring. We let Mastra own validation (don't re-`safeParse`
 what it already checked).
 
+## Per-row error isolation: catch in `runTable`, not `run`
+
+`errorStrategy: "warn"` only saves a row from a schema-validation failure. Anything else a
+row can throw — a provider 5xx/429/auth error, a network drop, an Apify timeout inside a
+tool — still rejects the `run` promise. The catch lives in `runTable`'s worker, not inside
+`run`: each row is wrapped, and a throw becomes a failed `RunResult` (`result: null`,
+`error` set, zero cost/tokens, real `durationMs`) instead of rejecting `Promise.all`. Why
+this matters: the headline use is a big batch, and without isolation one transient blip on
+row 7 would discard rows 1–500. Keeping the catch in `runTable` (not `run`) leaves a lone
+`run` call free to throw for a caller that wants the exception, while every batch path (CLI
+and `POST /run` both go through `runTable`) gets isolation for free. There is no per-row
+retry yet — a thrown row is reported, not re-attempted (see roadmap, retry/backoff).
+
 ## Per-run tools and the Sink
 
 Tools are built fresh inside each `run` and closed over a `Sink`

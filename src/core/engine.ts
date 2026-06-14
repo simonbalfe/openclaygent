@@ -120,6 +120,23 @@ function skippedResult<S extends z.ZodType>(model: string): RunResult<S> {
   };
 }
 
+function failedResult<S extends z.ZodType>(
+  model: string,
+  error: unknown,
+  durationMs: number,
+): RunResult<S> {
+  return {
+    result: null,
+    sources: [],
+    agentLog: [],
+    tokens: { input: 0, output: 0 },
+    cost: ZERO_COST,
+    durationMs,
+    model,
+    error: error instanceof Error ? error.message : String(error),
+  };
+}
+
 export async function run<S extends z.ZodType>(
   action: Action<S>,
   row: Row,
@@ -181,11 +198,17 @@ export async function runTable<S extends z.ZodType>(
   const limit = Math.max(1, opts.concurrency ?? 5);
   const results = new Array<RunResult<S>>(rows.length);
   const cache = createCacheFromEnv();
+  const model = opts.model ?? DEFAULT_MODEL;
   let next = 0;
   async function worker(): Promise<void> {
     while (next < rows.length) {
       const i = next++;
-      results[i] = await run(action, rows[i]!, opts, cache);
+      const started = performance.now();
+      try {
+        results[i] = await run(action, rows[i]!, opts, cache);
+      } catch (e) {
+        results[i] = failedResult(model, e, Math.round(performance.now() - started));
+      }
     }
   }
   await Promise.all(Array.from({ length: Math.min(limit, rows.length) }, worker));

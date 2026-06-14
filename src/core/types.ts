@@ -46,6 +46,7 @@ export interface RunResult<S extends z.ZodType> {
   durationMs: number;
   model: string;
   skipped?: boolean;
+  error?: string;
 }
 
 export function defineAction<S extends z.ZodType>(a: Action<S>): Action<S> {

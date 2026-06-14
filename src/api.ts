@@ -46,6 +46,7 @@ const RunResultSchema = z
     durationMs: z.number(),
     model: z.string(),
     skipped: z.boolean().optional(),
+    error: z.string().optional(),
   })
   .openapi("RunResult");
 

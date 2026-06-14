@@ -59,8 +59,14 @@ export async function loadActionSpec(flags: Flags): Promise<ActionSpec> {
 export function buildOptions(flags: Flags): RunOptions {
   const opts: RunOptions = {};
   if (typeof flags.model === "string") opts.model = flags.model;
-  if (typeof flags["max-steps"] === "string") opts.maxSteps = Number(flags["max-steps"]);
-  if (typeof flags.concurrency === "string") opts.concurrency = Number(flags.concurrency);
+  if (typeof flags["max-steps"] === "string") {
+    const n = Number(flags["max-steps"]);
+    if (Number.isFinite(n)) opts.maxSteps = n;
+  }
+  if (typeof flags.concurrency === "string") {
+    const n = Number(flags.concurrency);
+    if (Number.isFinite(n)) opts.concurrency = n;
+  }
   if (flags.verbose) {
     const emit = flags.json ? console.error : console.log;
     opts.onStep = (s) =>

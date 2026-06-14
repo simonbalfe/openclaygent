@@ -86,7 +86,7 @@ function compositeScore($: Api, el: Element): number {
   total += METRIC_WEIGHTS.linkDensity;
   score += METRIC_WEIGHTS.tagWeight * (TAG_WEIGHTS[el.tagName] ?? 0.5);
   total += METRIC_WEIGHTS.tagWeight;
-  score += METRIC_WEIGHTS.classIdWeight * Math.max(0, classIdPenalty(el));
+  score += METRIC_WEIGHTS.classIdWeight * classIdPenalty(el);
   total += METRIC_WEIGHTS.classIdWeight;
   score += METRIC_WEIGHTS.textLength * Math.log(textLen + 1);
   total += METRIC_WEIGHTS.textLength;

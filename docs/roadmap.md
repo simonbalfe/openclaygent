@@ -30,6 +30,7 @@ the gap it closes (vs Clay's Claygent and the Ferret reference).
 - [x] Large-page reduction — `fetch_page` takes a `query`; over-cap pages are BM25-ranked by chunk and reduced to the most relevant sections (`fitToBudget`, `extract.ts`), not head-truncated. Free/local/lexical. Mechanism in `decisions.md` (Large pages)
 - [ ] Semantic rerank upgrade — when lexical BM25 misses (query phrased unlike the page), add an embeddings or cross-encoder reranker over the page chunks (paid model / local infra — only if BM25 proves insufficient on real runs)
 - [ ] Page read windows (offset) + section targeting — let the agent page forward through a long page or jump to a heading-indexed section, plus `{ totalChars, truncated }` metadata (complements the BM25 reduction for when it wants more, not just the most-relevant slice)
+- [x] Per-row error isolation — a row whose `run` throws (provider error, etc.) returns a failed `RunResult` (`result: null`, `error` set) instead of rejecting the whole `runTable`, so one bad row never discards the rest of a batch. See `decisions.md` (Per-row error isolation)
 - [ ] Retry/backoff on provider 429/5xx — currently only the finalization fallback on empty answers, no transient-error retry
 
 ## Primitives (the catalog gap)

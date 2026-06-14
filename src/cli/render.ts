@@ -52,6 +52,10 @@ export function printRow(label: string, r: RunResult<z.ZodType>, showSteps: bool
     console.log(`${label}  (skipped)`);
     return;
   }
+  if (r.error) {
+    console.log(`${label}  error: ${r.error}`);
+    return;
+  }
   const stats = `${(r.durationMs / 1000).toFixed(1)}s · ${money(r.cost.total)} · ${r.tokens.input} in / ${r.tokens.output} out tok · ${r.sources.length} sources`;
   console.log(`${label}  ${stats}`);
   if (r.cost.tools > 0) console.log(`  cost  ${costBreakdown(r.cost)}`);

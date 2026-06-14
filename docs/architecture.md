@@ -105,7 +105,9 @@ fixed, the row varies.
 `runTable(action, rows, opts)` runs the loop across a whole table, returning one
 `RunResult` per row. Rows run concurrently through a fixed-size worker pool —
 `opts.concurrency` workers (default 5) pull from a shared cursor, so at most N rows are
-in flight at once while results stay in row order.
+in flight at once while results stay in row order. Each row is isolated: a row whose `run`
+throws (provider error, etc.) returns a failed `RunResult` (`result: null`, `error` set)
+rather than rejecting the whole batch, so one bad row never discards the others.
 
 ## The tools
 
@@ -148,8 +150,9 @@ input, or a link on a page already fetched. See decisions.md (No fabricated URLs
 
 Every run returns `RunResult<S>` (`src/core/types.ts`):
 
-- `result` — the schema-shaped answer, or null (null when skipped, or when both the agent
-  loop and the finalization fallback failed to produce structured output).
+- `result` — the schema-shaped answer, or null (null when skipped, when both the agent
+  loop and the finalization fallback failed to produce structured output, or when the row
+  threw — in which case `error` carries the message).
 - `sources` — every URL the tools touched.
 - `agentLog` — ordered `AgentStep[]`, the replay log of search/fetch/answer steps. Each
   step carries `results: StepResult[]` — what the tool actually returned (title, URL,
@@ -158,6 +161,8 @@ Every run returns `RunResult<S>` (`src/core/types.ts`):
 - `cost` — `RunCost`: exact spend for the run, `{ total, llm, tools, byProvider, tavilyCredits }`,
   all real provider figures (never estimated). Mechanism in `decisions.md` (Cost accounting).
 - `tokens`, `durationMs`, `model` — usage and provenance.
+- `skipped?` / `error?` — set when the row was skipped by `conditionalRun`, or when its
+  `run` threw and `runTable` caught it (the batch keeps going). Both absent on a normal run.
 
 ## File map
 
