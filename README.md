@@ -93,7 +93,7 @@ docker compose up -d          # SearXNG (free search) + patchright (free fetch) 
 | `TAVILY_API_KEY` | – | Last-resort search rung + the live `fetch_page` fallback |
 | `APIFY_API_TOKEN` | – | Enables the `linkedin_*` tools (profiles, posts, company data) |
 | `EVOMI_*` · `CAPSOLVER_API_KEY` | – | Residential proxy + captcha solver for the toughest anti-bot pages |
-| `OPENCLAY_MODEL` | `deepseek/deepseek-chat` | Default model id (override per run with `--model`) |
+| `OPENCLAY_MODEL` | `deepseek/deepseek-chat` | Default model id (override per run with `--model`); pick a cost/intelligence tier in `docs/decisions.md` (Model tiering) |
 | `TAVILY_USD_PER_CREDIT` | `0.008` | Tunes the cost report to your Tavily plan |
 | `PORT` | `8080` | Port for the HTTP API (`bun run api`) |
 

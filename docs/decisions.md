@@ -49,23 +49,79 @@ instead: cheap, open-weight, reliable here, and the right fit for the open-sourc
 the `OPENCLAY_MODEL` env var. The model id must be a valid OpenRouter slug; an invalid one
 returns `404 No endpoints found`.
 
-## One repair retry
+## Model tiering: cost vs. intelligence
 
-`run` retries once when the structured answer comes back null. Models intermittently end a
-turn on empty or non-JSON output, leaving the structurer nothing to shape. The retry
-re-asks with a nudge to return the JSON using what was already found. In testing this
-turned an intermittent 2/3 success rate into a consistent 3/3. The vault calls this "the
-line between usually works and reliable across thousands of rows."
+One model drives both the agent loop and the structuring pass, so its price applies to
+every row. **Cost is input-dominated**: a research run accumulates tens of thousands of
+input tokens across its tool calls but emits only a few thousand output tokens, so the
+input price ($/M in) is the number that moves a table's bill, not the output price.
+
+The real tradeoff is **reliability, not just price**. Cheap chat models answer in fewer
+steps but guess more (deepseek confidently returned a wrong company on a hard row).
+Reasoning models (gemini-3.x, gpt-5.x, grok — reasoning is always on) are more rigorous but
+do more tool calls, cost more, and are the ones that hit the empty-answer failure the
+finalization fallback exists to catch.
+
+Pick by row difficulty and table size. Prices are OpenRouter pay-as-you-go USD per 1M
+tokens as of 2026-06; all listed slugs support tool-calling. Check live prices before a
+large run — they drift.
+
+| Tier | When | Model | $/M in | $/M out | Ctx |
+|---|---|---|---|---|---|
+| **Budget** | high-volume, clean lookups (a domain has the fact on one page) | `deepseek/deepseek-chat` *(default)* | 0.20 | 0.80 | 131K |
+| | cheapest output, same class | `deepseek/deepseek-v3.2` | 0.23 | 0.34 | 131K |
+| | OpenAI budget tier | `openai/gpt-5-mini` | 0.25 | 2.0 | 400K |
+| **Balanced** | most enrichment; conflicting snippets need reconciling | `google/gemini-3.1-flash-lite` | 0.25 | 1.5 | 1M |
+| | open-weight mid | `z-ai/glm-4.6` | 0.43 | 1.74 | 203K |
+| | agentic mid | `moonshotai/kimi-k2` | 0.57 | 2.3 | 131K |
+| **Smart** | hard rows: funding histories, multi-source firmographics | `x-ai/grok-4.3` | 1.25 | 2.5 | 1M |
+| | thorough reasoning + 1M ctx | `google/gemini-3.5-flash` | 1.5 | 9.0 | 1M |
+| | Anthropic value tier | `anthropic/claude-haiku-4.5` | 1.0 | 5.0 | 200K |
+| **Frontier** | max accuracy, low volume, gold-set eval | `anthropic/claude-sonnet-4.6` | 3.0 | 15 | 1M |
+| | ceiling | `anthropic/claude-opus-4.8` | 5.0 | 25 | 1M |
+
+Rules of thumb:
+- Start on the default. Move up a tier only for the rows that come back null or low-confidence — run them as a second pass on a smarter model rather than paying frontier price for the whole table.
+- Long pages or many sources per row → favor a 1M-context model (gemini, grok, claude) so the accumulated loop context doesn't get truncated.
+- Reasoning models pair well with the finalization fallback; chat models rarely trigger it.
+
+## Finalization fallback (the empty-answer failure)
+
+`run` does ONE agent loop, then a tools-disabled finalization pass **only if** the loop
+returns no structured answer (`result === null`). This replaced an earlier two-attempt
+restart that re-ran the whole tool loop with a nudge — that didn't fix the real failure and
+doubled cost.
+
+The real failure, found by instrumenting `finishReason`: a thorough model (reasoning models
+especially — gemini-3.x, gpt-5.x, grok all force reasoning on) **exhausts its step budget
+still calling tools and never emits a final answer**. `finishReason` comes back
+`"tool-calls"` with empty text, so the structurer has nothing to shape → null. It is not
+model-specific: any model that runs out of steps mid-loop hits it; cheaper chat models
+(deepseek) just tend to answer sooner.
+
+What does NOT work, and why the fallback is a separate pass:
+- **`prepareStep` tool-suppression is not honored.** Returning `{ activeTools: [],
+  toolChoice: "none" }` on the final step (to force a text answer within budget) still let
+  the model call a tool — verified, `finishReason` stayed `"tool-calls"`. So we cannot rely
+  on reserving the last step.
+- **Replaying the agent's own message history fails on reasoning models.** OpenRouter strips
+  `reasoning_details` that lost their signatures across a multi-step tool conversation
+  ("Some reasoning_details entries were removed because they were missing signatures"), and
+  reasoning cannot be disabled per call ("Reasoning is mandatory for this endpoint").
+
+So the fallback is a clean single-turn call (`buildFinalizer`, `src/core/agent.ts`): a
+tools-less agent gets the findings serialized from `sink.log` (`serializeFindings`) as plain
+text and is forced to emit the schema from those alone. Single-turn → no broken reasoning
+history; no tools → it must answer instead of searching more. Its output cap is raised
+(`FINALIZE_MAX_TOKENS`, 4000) so mandatory reasoning has headroom before the JSON. The
+fallback never fires on the happy path, so it adds zero cost when the loop answers normally.
 
 `structuredOutput` is passed `errorStrategy: "warn"` — Mastra's own control for a schema
 validation failure (`'strict' | 'warn' | 'fallback'`, default `'strict'`). The default
 **throws** and would crash the whole row on a malformed answer (wrong type, illegal enum);
 `'warn'` logs and yields no object instead, so `res.object ?? null` falls through to the
-repair retry rather than erroring. We let Mastra own validation (don't re-`safeParse` what
-it already checked); the only thing we add on top is the nudge-retry, which Mastra's
-structured output doesn't do. A fuller-native path — an output processor with
-`maxProcessorRetries` — could replace the manual loop later, but the loop is openclaygent's
-specific behaviour and small.
+finalization fallback rather than erroring. We let Mastra own validation (don't re-`safeParse`
+what it already checked).
 
 ## Per-run tools and the Sink
 

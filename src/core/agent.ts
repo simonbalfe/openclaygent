@@ -107,6 +107,27 @@ const BEHAVIOUR = [
   "task's rules win.",
 ].join("\n");
 
+const FINALIZE_BEHAVIOUR = [
+  "You finalize one row of a data-enrichment table. The research phase already ran; you are",
+  "given the findings it gathered (search snippets, fetched page extracts, firmographic",
+  "lookups). You have NO tools — do not ask for more research, do not say you cannot access",
+  "anything. Produce the answer NOW from the findings provided.",
+  "- Output only concrete values supported by the findings. Never invent, never answer from",
+  "  memory alone.",
+  "- A field you cannot support from the findings is null, not a guess.",
+  "- Numbers as numbers, enum values exactly as specified, URLs only if they appear in the findings.",
+  "- When the findings conflict, prefer the most recent primary value and lower confidence.",
+].join("\n");
+
+export function buildFinalizer(provider: ReturnType<typeof buildOpenRouter>, model: string): Agent {
+  return new Agent({
+    id: `openclaygent-fin-${model.replace(/[^a-z0-9]/gi, "-")}`,
+    name: "openclaygent-finalizer",
+    instructions: FINALIZE_BEHAVIOUR,
+    model: provider.chat(model),
+  });
+}
+
 export function buildAgent(
   sink: Sink,
   model: string = DEFAULT_MODEL,

@@ -1,5 +1,5 @@
 import type { z } from "zod";
-import { buildAgent, DEFAULT_MODEL } from "./agent.ts";
+import { buildAgent, buildFinalizer, DEFAULT_MODEL } from "./agent.ts";
 import type { Cache } from "./cache.ts";
 import { createCacheFromEnv } from "./cache-pg.ts";
 import { emptyCost, tavilyUsd } from "./cost.ts";
@@ -14,13 +14,77 @@ export interface RunOptions {
   onStep?: (step: AgentStep) => void;
 }
 
+const DEFAULT_MAX_STEPS = 5;
+const DEFAULT_MAX_TOKENS = 1500;
+const FINALIZE_MAX_TOKENS = 4000;
+
 type Generated<S extends z.ZodType> = {
   object?: z.infer<S>;
   usage?: { inputTokens?: number; outputTokens?: number };
 };
 
-const RETRY_NUDGE =
-  "Your previous attempt returned no structured answer. Use what you found and return the JSON now.";
+interface PassResult<S extends z.ZodType> {
+  object: z.infer<S> | null;
+  inputTokens: number;
+  outputTokens: number;
+}
+
+function tally<S extends z.ZodType>(res: unknown): PassResult<S> {
+  const { object, usage } = res as Generated<S>;
+  return {
+    object: object ?? null,
+    inputTokens: usage?.inputTokens ?? 0,
+    outputTokens: usage?.outputTokens ?? 0,
+  };
+}
+
+function serializeFindings(log: AgentStep[]): string {
+  const blocks: string[] = [];
+  for (const step of log) {
+    if (step.type === "answer") continue;
+    const head =
+      step.type === "fetch"
+        ? `fetched: ${(step.urls ?? []).join(", ")}`
+        : `${step.type}: ${step.query ?? ""}${step.via ? ` [${step.via}]` : ""}`;
+    const lines = (step.results ?? []).map((r) => {
+      const label = [r.title, r.url].filter(Boolean).join(" — ");
+      return `  - ${label}${r.preview ? `\n    ${r.preview}` : ""}`;
+    });
+    blocks.push(lines.length ? `# ${head}\n${lines.join("\n")}` : `# ${head}`);
+  }
+  return blocks.join("\n\n");
+}
+
+function finalizePrompt(task: string, log: AgentStep[]): string {
+  return [
+    task,
+    "Research already gathered for this row:",
+    serializeFindings(log),
+    "Return the JSON now using only the findings above. A field you cannot support is null.",
+  ].join("\n\n");
+}
+
+function seedRowUrls(sink: Sink, row: Row): void {
+  for (const value of Object.values(row)) {
+    if (typeof value !== "string") continue;
+    for (const match of value.matchAll(/https?:\/\/\S+/g)) noteUrl(sink, match[0]);
+    for (const match of value.matchAll(/\b(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}\b/gi))
+      noteUrl(sink, `https://${match[0]}`);
+  }
+}
+
+function assembleCost(sink: Sink): RunCost {
+  const tavily = tavilyUsd(sink.cost.tavilyCredits);
+  const llm = sink.cost.openrouter;
+  const tools = sink.cost.exa + sink.cost.apify + tavily;
+  return {
+    total: llm + tools,
+    llm,
+    tools,
+    byProvider: { openrouter: llm, exa: sink.cost.exa, apify: sink.cost.apify, tavily },
+    tavilyCredits: sink.cost.tavilyCredits,
+  };
+}
 
 export function fillTemplate(template: string, row: Row): { text: string; missing: string[] } {
   const missing: string[] = [];
@@ -67,56 +131,43 @@ export async function run<S extends z.ZodType>(
 
   const started = performance.now();
   const sink: Sink = { sources: new Set(), seen: new Set(), log: [], onStep: opts.onStep, cost: emptyCost() };
-  for (const value of Object.values(row)) {
-    if (typeof value !== "string") continue;
-    for (const match of value.matchAll(/https?:\/\/\S+/g)) noteUrl(sink, match[0]);
-    for (const match of value.matchAll(/\b(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}\b/gi))
-      noteUrl(sink, `https://${match[0]}`);
-  }
+  seedRowUrls(sink, row);
+
   const { agent, provider } = buildAgent(sink, model, cache);
-  const structuringModel = provider.chat(model);
+  const structuredOutput = { schema: action.output, model: provider.chat(model), errorStrategy: "warn" as const };
+  const maxOutputTokens = opts.maxOutputTokens ?? DEFAULT_MAX_TOKENS;
+
   const { text, missing } = fillTemplate(action.template, row);
   if (missing.length) console.warn(`[${action.name}] row missing: ${missing.join(", ")}`);
 
-  let result: z.infer<S> | null = null;
-  let inputTokens = 0;
-  let outputTokens = 0;
-  for (let attempt = 0; attempt < 2 && result === null; attempt++) {
-    const prompt = attempt === 0 ? text : `${text}\n\n(${RETRY_NUDGE})`;
-    const res = (await agent.generate(
-      [
-        { role: "system", content: action.instructions },
-        { role: "user", content: prompt },
-      ],
-      {
-        maxSteps: opts.maxSteps ?? 5,
-        modelSettings: { maxOutputTokens: opts.maxOutputTokens ?? 1500 },
-        structuredOutput: { schema: action.output, model: structuringModel, errorStrategy: "warn" },
-      },
-    )) as Generated<S>;
-    result = res.object ?? null;
-    inputTokens += res.usage?.inputTokens ?? 0;
-    outputTokens += res.usage?.outputTokens ?? 0;
+  const systemPrompt = { role: "system", content: action.instructions } as const;
+  let { object: result, inputTokens, outputTokens } = tally<S>(
+    await agent.generate([systemPrompt, { role: "user", content: text }], {
+      maxSteps: opts.maxSteps ?? DEFAULT_MAX_STEPS,
+      modelSettings: { maxOutputTokens },
+      structuredOutput,
+    }),
+  );
+
+  if (result === null) {
+    const finalize = tally<S>(
+      await buildFinalizer(provider, model).generate(
+        [systemPrompt, { role: "user", content: finalizePrompt(text, sink.log) }],
+        { modelSettings: { maxOutputTokens: Math.max(maxOutputTokens, FINALIZE_MAX_TOKENS) }, structuredOutput },
+      ),
+    );
+    result = finalize.object;
+    inputTokens += finalize.inputTokens;
+    outputTokens += finalize.outputTokens;
   }
   record(sink, { type: "answer" });
-
-  const tavily = tavilyUsd(sink.cost.tavilyCredits);
-  const llm = sink.cost.openrouter;
-  const tools = sink.cost.exa + sink.cost.apify + tavily;
-  const cost: RunCost = {
-    total: llm + tools,
-    llm,
-    tools,
-    byProvider: { openrouter: llm, exa: sink.cost.exa, apify: sink.cost.apify, tavily },
-    tavilyCredits: sink.cost.tavilyCredits,
-  };
 
   return {
     result,
     sources: [...sink.sources],
     agentLog: sink.log,
     tokens: { input: inputTokens, output: outputTokens },
-    cost,
+    cost: assembleCost(sink),
     durationMs: Math.round(performance.now() - started),
     model,
   };

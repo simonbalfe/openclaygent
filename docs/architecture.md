@@ -24,7 +24,9 @@ flowchart LR
 ## One row through `run`
 
 Each row passes the skip gate, gets its template filled, runs the agent loop, and is
-shaped into the schema — with one repair retry if the structured answer comes back empty.
+shaped into the schema — with a tools-disabled finalization pass if the loop ends without
+a structured answer (the common reasoning-model failure: the step budget runs out
+mid-tool-call and no final text is ever produced).
 
 ```mermaid
 flowchart TD
@@ -34,8 +36,10 @@ flowchart TD
   F --> G["agent.generate<br/>(search / fetch loop)"]
   G --> ST["structuring model → Zod"]
   ST --> Q{"structured<br/>answer?"}
-  Q -- "no, attempt 1" --> N["re-ask with nudge"] --> G
-  Q -- "no, attempt 2" --> NULL["result = null"]
+  Q -- no --> FIN["finalizer (no tools):<br/>serialized findings → Zod"]
+  FIN --> Q2{"answer?"}
+  Q2 -- no --> NULL["result = null"]
+  Q2 -- yes --> OK
   Q -- yes --> OK["result = object"]
   OK --> OUT(["RunResult"])
   NULL --> OUT
@@ -91,8 +95,10 @@ fixed, the row varies.
    conflict.
 4. **Structure** — a separate structuring model shapes the final text into the action's
    Zod schema (see `decisions.md` for why it must be separate).
-5. **Repair retry** — if the structured answer is null, re-ask once with a nudge. See
-   `decisions.md`.
+5. **Finalization fallback** — if the loop returns no structured answer (a reasoning model
+   exhausting its step budget mid-tool-call is the usual cause), a separate tools-disabled
+   finalizer (`buildFinalizer`, `src/core/agent.ts`) is handed the serialized findings from
+   the run's `Sink` and forced to emit the schema from those alone. See `decisions.md`.
 6. **Return the contract** — `RunResult<S>`: `result`, `sources`, `agentLog`, `tokens`,
    `cost`, `durationMs`, `model`.
 
@@ -142,8 +148,8 @@ input, or a link on a page already fetched. See decisions.md (No fabricated URLs
 
 Every run returns `RunResult<S>` (`src/core/types.ts`):
 
-- `result` — the schema-shaped answer, or null (null when skipped, or when both attempts
-  failed to produce structured output).
+- `result` — the schema-shaped answer, or null (null when skipped, or when both the agent
+  loop and the finalization fallback failed to produce structured output).
 - `sources` — every URL the tools touched.
 - `agentLog` — ordered `AgentStep[]`, the replay log of search/fetch/answer steps. Each
   step carries `results: StepResult[]` — what the tool actually returned (title, URL,
@@ -167,11 +173,11 @@ Every run returns `RunResult<S>` (`src/core/types.ts`):
 | `src/tools/apify.ts` | shared `runActor` — Apify start→poll→read-dataset helper (+ `usageTotalUsd` cost), used by the LinkedIn and Crunchbase tools |
 | `src/tools/linkedin.ts` | `linkedin_profile` / `linkedin_posts` / `linkedin_post_reactions` / `linkedin_find_people` / `linkedin_company` (Apify HarvestAPI actors; registered only when `APIFY_API_TOKEN` is set) |
 | `src/tools/crunchbase.ts` | `crunchbase_company` — **fallback-only** Crunchbase funding/firmographics via an Apify actor (`CRUNCHBASE_ACTOR`, default `parseforge~crunchbase-scraper`); registered only when `APIFY_API_TOKEN` is set |
-| `src/core/agent.ts` | per-run cost-tapped OpenRouter provider (`buildOpenRouter`), default model, research behaviour, `buildAgent` |
+| `src/core/agent.ts` | per-run cost-tapped OpenRouter provider (`buildOpenRouter`), default model, research behaviour, `buildAgent`, tools-disabled `buildFinalizer` |
 | `src/core/cost.ts` | `CostAccumulator` + `emptyCost`, Tavily credit→USD rate, `extractCostUsd` (reads `usage.cost` from JSON or SSE OpenRouter responses) |
 | `src/core/cache.ts` | `createCache(l2?)` / `Cache` / `Layer2` — single-flight L1 in-memory cache (`getOrCompute(ns, key, fn, opts)`) shared across a `runTable`, with an optional pluggable L2; backs search + fetch result reuse. See `decisions.md` (Per-table cache) |
 | `src/core/cache-pg.ts` | `createCacheFromEnv` — wires the L2 Postgres backend (Drizzle over `drizzle-orm/bun-sql`, typed `openclay_cache` table, auto-created on first use) when `OPENCLAY_CACHE_URL` is set, else returns the L1-only cache. Best-effort: DB errors degrade to a miss, never raise into a run |
-| `src/core/engine.ts` | `run` (one row), `runTable` (a table), template fill, conditional gate, repair retry, `RunCost` assembly; `runTable` owns one `Cache` and threads it through every `run` → `buildAgent` → web tools |
+| `src/core/engine.ts` | `run` (one row), `runTable` (a table), template fill, conditional gate, finalization fallback (`serializeFindings` + `buildFinalizer`), `RunCost` assembly; `runTable` owns one `Cache` and threads it through every `run` → `buildAgent` → web tools |
 | `src/core/action.ts` | `ActionSpec` (the serialized brief: instructions · template · schema) + `buildAction` — the adapter both frontends call so neither duplicates action assembly |
 | `src/core/schema.ts` | `buildSchema` — turn a JSON Schema / short form into the action's Zod `output` |
 | `src/cli.ts` | CLI entry: wire args → `buildAction` → rows → `runTable` → render |

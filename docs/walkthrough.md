@@ -118,12 +118,16 @@ free search would have answered.
 ## 10. Shaping the answer
 
 Once the agent has gathered enough, a separate pass turns its free-text findings into the typed
-schema. If that comes back empty, it re-asks once with a nudge.
+schema. If that comes back empty — usually because a thorough model spent its whole step budget
+searching and never wrote a final answer — a tools-disabled finalizer is handed the gathered
+findings and forced to produce the schema from those alone.
 
 **Why a separate structuring step:** forcing the agent to emit structured JSON *while* it
 researches disables tool-calling — it would answer from memory instead of searching. Letting it
-work in plain text first, then shaping the result, keeps the research honest. The one repair
-retry is the difference between "usually works" and "reliable across thousands of rows."
+work in plain text first, then shaping the result, keeps the research honest. The finalization
+fallback is the difference between "usually works" and "reliable across thousands of rows": no
+model, however eager to keep searching, can leave a row empty. See `decisions.md` (Finalization
+fallback) for why the fallback is a clean single-turn call and not a step-budget trick.
 
 ## 11. What you get back
 

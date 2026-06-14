@@ -10,7 +10,7 @@ the gap it closes (vs Clay's Claygent and the Ferret reference).
 - [x] Mastra agent on OpenRouter (one key, any model)
 - [x] Exa tools — `web_search` (inline contents) + `fetch_page`
 - [x] Separate structuring model (so the agent can call tools)
-- [x] One repair retry on empty structured output
+- [x] Finalization fallback on empty structured output — tools-disabled pass over the serialized findings when the agent loop ends without an answer (the reasoning-model step-budget exhaustion failure). See `decisions.md` (Finalization fallback)
 - [x] `Sink` → `sources` + `agentLog` provenance
 - [x] Conditional-run skip (the credit saver)
 - [x] CLI — single (`--input`) and batch (`--rows` JSON/CSV), `--require`, `--json`, `--out`, `--model`
@@ -30,7 +30,7 @@ the gap it closes (vs Clay's Claygent and the Ferret reference).
 - [x] Large-page reduction — `fetch_page` takes a `query`; over-cap pages are BM25-ranked by chunk and reduced to the most relevant sections (`fitToBudget`, `extract.ts`), not head-truncated. Free/local/lexical. Mechanism in `decisions.md` (Large pages)
 - [ ] Semantic rerank upgrade — when lexical BM25 misses (query phrased unlike the page), add an embeddings or cross-encoder reranker over the page chunks (paid model / local infra — only if BM25 proves insufficient on real runs)
 - [ ] Page read windows (offset) + section targeting — let the agent page forward through a long page or jump to a heading-indexed section, plus `{ totalChars, truncated }` metadata (complements the BM25 reduction for when it wants more, not just the most-relevant slice)
-- [ ] Retry/backoff on provider 429/5xx — currently a single repair retry only
+- [ ] Retry/backoff on provider 429/5xx — currently only the finalization fallback on empty answers, no transient-error retry
 
 ## Primitives (the catalog gap)
 
