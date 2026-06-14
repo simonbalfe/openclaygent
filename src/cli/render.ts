@@ -9,7 +9,9 @@ export function formatStep(s: AgentStep, detailed = false): string[] {
   const lines: string[] = [];
   const details = detailed ? (s.results ?? []) : [];
   if (s.type === "search") {
-    lines.push(`search    "${s.query}"${s.via ? ` [${s.via}]` : ""} → ${s.resultCount} results`);
+    lines.push(
+      `search    "${s.query}"${s.via ? ` [${s.via}]` : ""} → ${s.resultCount} results${s.cached ? " (cached)" : ""}`,
+    );
     details.forEach((r, i) => {
       lines.push(`    ${i + 1}. ${r.title || r.url || ""}`);
       if (r.title && r.url) lines.push(`       ${r.url}`);

@@ -1,5 +1,7 @@
 import type { z } from "zod";
 import { buildAgent, DEFAULT_MODEL } from "./agent.ts";
+import type { Cache } from "./cache.ts";
+import { createCacheFromEnv } from "./cache-pg.ts";
 import { emptyCost, tavilyUsd } from "./cost.ts";
 import { noteUrl, record, type Sink } from "../tools/sink.ts";
 import type { Action, AgentStep, Row, RunCost, RunResult } from "./types.ts";
@@ -58,6 +60,7 @@ export async function run<S extends z.ZodType>(
   action: Action<S>,
   row: Row,
   opts: RunOptions = {},
+  cache: Cache = createCacheFromEnv(),
 ): Promise<RunResult<S>> {
   const model = opts.model ?? DEFAULT_MODEL;
   if (action.conditionalRun && !action.conditionalRun(row)) return skippedResult(model);
@@ -70,7 +73,7 @@ export async function run<S extends z.ZodType>(
     for (const match of value.matchAll(/\b(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}\b/gi))
       noteUrl(sink, `https://${match[0]}`);
   }
-  const { agent, provider } = buildAgent(sink, model);
+  const { agent, provider } = buildAgent(sink, model, cache);
   const structuringModel = provider.chat(model);
   const { text, missing } = fillTemplate(action.template, row);
   if (missing.length) console.warn(`[${action.name}] row missing: ${missing.join(", ")}`);
@@ -126,11 +129,12 @@ export async function runTable<S extends z.ZodType>(
 ): Promise<RunResult<S>[]> {
   const limit = Math.max(1, opts.concurrency ?? 5);
   const results = new Array<RunResult<S>>(rows.length);
+  const cache = createCacheFromEnv();
   let next = 0;
   async function worker(): Promise<void> {
     while (next < rows.length) {
       const i = next++;
-      results[i] = await run(action, rows[i]!, opts);
+      results[i] = await run(action, rows[i]!, opts, cache);
     }
   }
   await Promise.all(Array.from({ length: Math.min(limit, rows.length) }, worker));

@@ -1,5 +1,6 @@
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
+import type { Cache } from "../core/cache.ts";
 import { tavilyUsd } from "../core/cost.ts";
 import { exaClient, tavilyClient } from "./providers.ts";
 import { clip, noteUrl, record, type Sink } from "./sink.ts";
@@ -99,7 +100,7 @@ export async function searchWeb(
     : new Error("No search provider configured: set SEARXNG_URL, EXA_API_KEY, or TAVILY_API_KEY");
 }
 
-export function webSearchTool(sink: Sink) {
+export function webSearchTool(sink: Sink, cache: Cache) {
   return createTool({
     id: "web_search",
     description:
@@ -114,20 +115,29 @@ export function webSearchTool(sink: Sink) {
       ),
     }),
     execute: async ({ query, max_results }) => {
-      const { results, via, exaUsd, tavilyCredits } = await searchWeb(query, max_results);
+      const { value, cached } = await cache.getOrCompute(
+        "search",
+        `${query}|${max_results}`,
+        () => searchWeb(query, max_results),
+        { cacheable: (r) => r.results.length > 0 },
+      );
+      const { results, via, exaUsd, tavilyCredits } = value;
       for (const r of results) {
         sink.sources.add(r.url);
         noteUrl(sink, r.url);
       }
-      sink.cost.exa += exaUsd;
-      sink.cost.tavilyCredits += tavilyCredits;
+      if (!cached) {
+        sink.cost.exa += exaUsd;
+        sink.cost.tavilyCredits += tavilyCredits;
+      }
       record(sink, {
         type: "search",
         query,
         via,
         resultCount: results.length,
         results: results.map((r) => ({ title: r.title, url: r.url, preview: clip(r.content) })),
-        cost: exaUsd + tavilyUsd(tavilyCredits),
+        cost: cached ? 0 : exaUsd + tavilyUsd(tavilyCredits),
+        cached,
       });
       return { results };
     },

@@ -14,7 +14,7 @@ export function record(sink: Sink, step: AgentStep): void {
   sink.onStep?.(step);
 }
 
-function normalizeUrl(url: string): string {
+export function normalizeUrl(url: string): string {
   try {
     const u = new URL(url);
     const host = u.host.replace(/^www\./i, "").toLowerCase();

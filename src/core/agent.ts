@@ -1,5 +1,6 @@
 import { Agent } from "@mastra/core/agent";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
+import type { Cache } from "./cache.ts";
 import { type CostAccumulator, extractCostUsd } from "./cost.ts";
 import { crunchbaseTools } from "../tools/crunchbase.ts";
 import { linkedinTools } from "../tools/linkedin.ts";
@@ -109,10 +110,11 @@ const BEHAVIOUR = [
 export function buildAgent(
   sink: Sink,
   model: string = DEFAULT_MODEL,
+  cache: Cache,
 ): { agent: Agent; provider: ReturnType<typeof buildOpenRouter> } {
   const provider = buildOpenRouter(sink.cost);
   const tools = {
-    ...webTools(sink),
+    ...webTools(sink, cache),
     ...(process.env.APIFY_API_TOKEN ? { ...linkedinTools(sink), ...crunchbaseTools(sink) } : {}),
   };
   const agent = new Agent({

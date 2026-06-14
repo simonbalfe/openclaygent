@@ -1,10 +1,11 @@
 import { createTool } from "@mastra/core/tools";
 import { extractText, getDocumentProxy } from "unpdf";
 import { z } from "zod";
+import type { Cache } from "../core/cache.ts";
 import { tavilyUsd } from "../core/cost.ts";
 import { fitToBudget, htmlToMarkdown } from "./extract.ts";
 import { impit, tavilyClient } from "./providers.ts";
-import { assertVerifiedUrl, clip, noteUrl, noteUrlsInText, record, type Sink } from "./sink.ts";
+import { assertVerifiedUrl, clip, noteUrl, noteUrlsInText, normalizeUrl, record, type Sink } from "./sink.ts";
 
 async function pdfToText(buf: ArrayBuffer): Promise<string> {
   try {
@@ -59,16 +60,17 @@ async function patchrightFetch(
   }
 }
 
-async function impitFetch(url: string): Promise<string> {
+async function impitFetch(url: string): Promise<{ text: string; status: number }> {
   try {
     const res = await impit.fetch(url);
-    if (!res.ok) return "";
+    if (!res.ok) return { text: "", status: res.status };
     const type = res.headers.get("content-type") ?? "";
-    if (type.includes("pdf") || url.toLowerCase().endsWith(".pdf")) return pdfToText(await res.arrayBuffer());
-    if (type && !type.includes("html") && !type.includes("text")) return "";
-    return htmlToMarkdown(await res.text(), url);
+    if (type.includes("pdf") || url.toLowerCase().endsWith(".pdf"))
+      return { text: await pdfToText(await res.arrayBuffer()), status: res.status };
+    if (type && !type.includes("html") && !type.includes("text")) return { text: "", status: res.status };
+    return { text: htmlToMarkdown(await res.text(), url), status: res.status };
   } catch {
-    return "";
+    return { text: "", status: 0 };
   }
 }
 
@@ -87,7 +89,45 @@ async function tavilyExtractFetch(url: string): Promise<{ text: string; credits:
   }
 }
 
-export function fetchPageTool(sink: Sink) {
+type Outcome = "ok" | "dead" | "transient";
+
+const DEAD_STATUS = new Set([401, 404, 410]);
+const DEAD_TTL_MS = 7 * 24 * 3600_000;
+
+export function isDeadStatus(status: number): boolean {
+  return DEAD_STATUS.has(status);
+}
+
+interface FetchResult {
+  text: string;
+  via: string;
+  tavilyCredits: number;
+  outcome: Outcome;
+}
+
+async function fetchLadder(url: string): Promise<FetchResult> {
+  const local = await impitFetch(url);
+  if (usable(local.text)) return { text: local.text, via: "impit", tavilyCredits: 0, outcome: "ok" };
+  if (isDeadStatus(local.status)) return { text: "", via: "impit", tavilyCredits: 0, outcome: "dead" };
+
+  const rendered = await patchrightFetch(url);
+  if (usable(rendered)) return { text: rendered, via: "patchright", tavilyCredits: 0, outcome: "ok" };
+
+  const proxied = await patchrightFetch(url, { proxy: true });
+  if (usable(proxied)) return { text: proxied, via: "patchright+proxy", tavilyCredits: 0, outcome: "ok" };
+
+  const solved = await patchrightFetch(url, { proxy: true, solve: true });
+  if (usable(solved)) return { text: solved, via: "patchright+solver", tavilyCredits: 0, outcome: "ok" };
+
+  const tav = await tavilyExtractFetch(url);
+  if (usable(tav.text)) return { text: tav.text, via: "tavily", tavilyCredits: tav.credits, outcome: "ok" };
+
+  const best = tav.text || solved || proxied || rendered || local.text;
+  const via = tav.text ? "tavily" : rendered ? "patchright" : "impit";
+  return { text: best, via, tavilyCredits: tav.credits, outcome: "transient" };
+}
+
+export function fetchPageTool(sink: Sink, cache: Cache) {
   return createTool({
     id: "fetch_page",
     description:
@@ -105,27 +145,14 @@ export function fetchPageTool(sink: Sink) {
     execute: async ({ urls, query }) => {
       for (const url of urls)
         assertVerifiedUrl(sink, url, "Only fetch URLs from a web_search result, this row's data, or links on a page you already fetched. web_search first.");
-      const raw: { url: string; text: string; via: string; tavilyCredits: number }[] =
+      const raw: { url: string; text: string; via: string; tavilyCredits: number; cached: boolean }[] =
         await Promise.all(
-          urls.map(async (url: string) => {
-          const local = await impitFetch(url);
-          if (usable(local)) return { url, text: local, via: "impit", tavilyCredits: 0 };
-
-          const rendered = await patchrightFetch(url);
-          if (usable(rendered)) return { url, text: rendered, via: "patchright", tavilyCredits: 0 };
-
-          const proxied = await patchrightFetch(url, { proxy: true });
-          if (usable(proxied)) return { url, text: proxied, via: "patchright+proxy", tavilyCredits: 0 };
-
-          const solved = await patchrightFetch(url, { proxy: true, solve: true });
-          if (usable(solved)) return { url, text: solved, via: "patchright+solver", tavilyCredits: 0 };
-
-          const tav = await tavilyExtractFetch(url);
-          if (usable(tav.text)) return { url, text: tav.text, via: "tavily", tavilyCredits: tav.credits };
-
-          const best = tav.text || solved || proxied || rendered || local;
-          const via = tav.text ? "tavily" : rendered ? "patchright" : "impit";
-          return { url, text: best, via, tavilyCredits: tav.credits };
+        urls.map(async (url: string) => {
+          const { value, cached } = await cache.getOrCompute("fetch", normalizeUrl(url), () => fetchLadder(url), {
+            cacheable: (r) => r.outcome === "ok" || r.outcome === "dead",
+            ttlMs: (r) => (r.outcome === "dead" ? DEAD_TTL_MS : undefined),
+          });
+          return { url, text: value.text, via: value.via, tavilyCredits: cached ? 0 : value.tavilyCredits, cached };
         }),
       );
       const pages = raw.map((p) => ({ ...p, text: fitToBudget(p.text, query, PAGE_CAP) }));
@@ -143,6 +170,7 @@ export function fetchPageTool(sink: Sink) {
         resultCount: pages.length,
         results: pages.map((p) => ({ url: p.url, chars: p.text.length, preview: clip(p.text), via: p.via })),
         cost: tavilyUsd(tavilyCredits),
+        cached: pages.length > 0 && pages.every((p) => p.cached),
       });
       return { pages: pages.map(({ url, text }) => ({ url, text })) };
     },

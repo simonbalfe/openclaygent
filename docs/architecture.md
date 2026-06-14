@@ -158,9 +158,9 @@ Every run returns `RunResult<S>` (`src/core/types.ts`):
 | File | Role |
 |---|---|
 | `src/core/types.ts` | `Action` primitive, `RunResult` contract, `defineAction` helper |
-| `src/tools/web.ts` | thin assembler — `webTools(sink)` returns `web_search` + `fetch_page` from `search.ts` and `fetch.ts` |
+| `src/tools/web.ts` | thin assembler — `webTools(sink, cache)` returns `web_search` + `fetch_page` from `search.ts` and `fetch.ts` |
 | `src/tools/search.ts` | `web_search` tool + `searchWeb` (SearXNG→Exa→Tavily ladder) |
-| `src/tools/fetch.ts` | `fetch_page` tool (impit→patchright→Tavily /extract ladder), `usable` shell-page guard |
+| `src/tools/fetch.ts` | `fetch_page` tool (impit→patchright→Tavily /extract ladder), `usable` shell-page guard, `fetchLadder` outcome classification (`ok`/`dead`/`transient`, `isDeadStatus`) for status-aware negative caching |
 | `src/tools/providers.ts` | shared external clients: the `impit` instance, lazy `exaClient`, lazy `tavilyClient` |
 | `src/tools/sink.ts` | the per-run `Sink` (sources, `seen` URL-provenance set, agent log, cost, `onStep`) + `record`/`clip`/`noteUrl`/`assertVerifiedUrl` helpers, shared by every tool |
 | `src/tools/extract.ts` | HTML→markdown: `extractStructuredData` (JSON-LD + meta, prepended) then Readability-first (article/blog) → Crawl4AI-prune fallback (structured pages) → Turndown GFM (leftover non-data tables flattened) |
@@ -169,7 +169,9 @@ Every run returns `RunResult<S>` (`src/core/types.ts`):
 | `src/tools/crunchbase.ts` | `crunchbase_company` — **fallback-only** Crunchbase funding/firmographics via an Apify actor (`CRUNCHBASE_ACTOR`, default `parseforge~crunchbase-scraper`); registered only when `APIFY_API_TOKEN` is set |
 | `src/core/agent.ts` | per-run cost-tapped OpenRouter provider (`buildOpenRouter`), default model, research behaviour, `buildAgent` |
 | `src/core/cost.ts` | `CostAccumulator` + `emptyCost`, Tavily credit→USD rate, `extractCostUsd` (reads `usage.cost` from JSON or SSE OpenRouter responses) |
-| `src/core/engine.ts` | `run` (one row), `runTable` (a table), template fill, conditional gate, repair retry, `RunCost` assembly |
+| `src/core/cache.ts` | `createCache(l2?)` / `Cache` / `Layer2` — single-flight L1 in-memory cache (`getOrCompute(ns, key, fn, opts)`) shared across a `runTable`, with an optional pluggable L2; backs search + fetch result reuse. See `decisions.md` (Per-table cache) |
+| `src/core/cache-pg.ts` | `createCacheFromEnv` — wires the L2 Postgres backend (Drizzle over `drizzle-orm/bun-sql`, typed `openclay_cache` table, auto-created on first use) when `OPENCLAY_CACHE_URL` is set, else returns the L1-only cache. Best-effort: DB errors degrade to a miss, never raise into a run |
+| `src/core/engine.ts` | `run` (one row), `runTable` (a table), template fill, conditional gate, repair retry, `RunCost` assembly; `runTable` owns one `Cache` and threads it through every `run` → `buildAgent` → web tools |
 | `src/core/action.ts` | `ActionSpec` (the serialized brief: instructions · template · schema) + `buildAction` — the adapter both frontends call so neither duplicates action assembly |
 | `src/core/schema.ts` | `buildSchema` — turn a JSON Schema / short form into the action's Zod `output` |
 | `src/cli.ts` | CLI entry: wire args → `buildAction` → rows → `runTable` → render |
@@ -177,7 +179,7 @@ Every run returns `RunResult<S>` (`src/core/types.ts`):
 | `src/cli/input.ts` | `parseCSV`, `loadRows`, `loadActionSpec`, `buildOptions` — flags/files → `ActionSpec` + rows + `RunOptions` |
 | `src/cli/render.ts` | `formatStep`, `money`, `costBreakdown`, `printRow` — terminal presentation |
 | `src/api.ts` | HTTP entry: `@hono/zod-openapi` `POST /run` → `buildAction` → `runTable`, plus `/openapi.json` + Scalar `/docs` + `/health` |
-| `tests/` | `bun test` suite: schema building, skip path, template fill, extractor, search ladder; live test opt-in via `RUN_LIVE` |
+| `tests/` | `bun test` suite: schema building, skip path, template fill, extractor, search ladder, cache (single-flight, L1/L2 miss/hit, TTL-by-value), status mapping (`isDeadStatus`), tool-level cache E2E (no agent: dedup, 404 short-circuit + negative cache, transient not persisted), cache benchmark (measured call-count + wall-clock, cache-on vs cache-off); opt-in: live agent via `RUN_LIVE`, real-Postgres L2 via `OPENCLAY_CACHE_URL` |
 
 ## CLI
 

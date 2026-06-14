@@ -26,6 +26,7 @@ export interface AgentStep {
   resultCount?: number;
   results?: StepResult[];
   cost?: number;
+  cached?: boolean;
 }
 
 export interface RunCost {
