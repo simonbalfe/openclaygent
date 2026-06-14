@@ -33,7 +33,7 @@ its env is unset) — mechanism and rung order in `docs/architecture.md` (The to
 
 - `docs/walkthrough.md` — plain-language tour of the whole flow + the reasoning for each step (the narrative "why"; points to architecture/decisions for detail).
 - `docs/architecture.md` — the action primitive, the loop, the contract, the file map (canonical — other docs point here, never copy it), scope.
-- `docs/decisions.md` — the non-obvious choices and the conventions that bite (Mastra v1 tool signature, separate structuring model, token cap, model choice, repair retry). Read this before touching the agent, tools, or engine — each gotcha silently breaks a run.
+- `docs/decisions.md` — the non-obvious choices and the conventions that bite (Mastra v1 tool signature, separate structuring model, token cap, model choice, finalization fallback, model tiering). Read this before touching the agent, tools, or engine — each gotcha silently breaks a run.
 - `docs/roadmap.md` — feature checklist: what's shipped and what's still to add (parity gaps vs Claygent + Ferret).
 
 ## Standing orders
