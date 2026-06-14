@@ -70,10 +70,12 @@ specific behaviour and small.
 ## Per-run tools and the Sink
 
 Tools are built fresh inside each `run` and closed over a `Sink`
-(`{ sources, log, cost, onStep? }`) rather than reading/writing module-level state. This
+(`{ sources, seen, log, cost, onStep? }`) rather than reading/writing module-level state. This
 keeps concurrent runs isolated and lets `RunResult` report exactly the URLs, steps, and
 spend that this run produced. `sink.cost` (`CostAccumulator` in `src/core/cost.ts`) is the
-single place every provider's spend lands during a run.
+single place every provider's spend lands during a run. `sink.seen` is the URL-provenance
+set (see "No fabricated URLs"): `sources` is what the run reported, `seen` is what the run
+is allowed to open.
 
 ## Cost accounting: exact per-provider, no estimates
 
@@ -125,8 +127,10 @@ bot-checks pass). A **PDF** response (`content-type: application/pdf` or `.pdf` 
 to text with `unpdf` instead of the HTML path — `extract.ts` is HTML-only, so without this a
 PDF returned nothing.
 
-HTML is turned into markdown by `src/tools/extract.ts`, **Readability-first with a prune
-fallback** — because a research agent hits both articles *and* structured pages:
+HTML is turned into markdown by `src/tools/extract.ts`. First `extractStructuredData` pulls
+the machine-readable layer (`<script type="application/ld+json">` + `<meta>`/og) and prepends a
+compact `## Page structured data` block; then the visible body is extracted **Readability-first
+with a prune fallback** — because a research agent hits both articles *and* structured pages:
 
 1. **Mozilla Readability** (`@mozilla/readability` over a `linkedom` DOM, gated by
    `isProbablyReaderable`) handles the article/blog/news slice — it locks onto the main
@@ -144,6 +148,38 @@ tables). A leftover-table rule flattens any table gfm can't convert (no heading 
 Wikipedia infoboxes) to ` · `-joined text, so raw `<table>` HTML never leaks into the output.
 Images are dropped; same-domain links keep their hrefs for navigation, off-domain links
 flatten to text to save tokens.
+
+### JSON-LD structured data: the layer the reader tools throw away
+
+`extractStructuredData` parses `<script type="application/ld+json">` (schema.org) and `<meta>`
+description/og tags *before* the body extraction, and prepends a `## Page structured data`
+block. This is the highest-value extraction decision for firmographic enrichment, and it is
+deliberately something the popular reader tools do NOT do:
+
+- **Why it matters.** JSON-LD exists for SEO (Google rich results), so sites publish exact,
+  curated facts there — `numberOfEmployees`, `foundingDate`, `PostalAddress`, `FAQPage` Q&A,
+  `Product` price/rating — **even on gated pages where the visible body is paywalled.** On
+  Pitchbook's Hugging Face page the visible body is "Request a free trial"; the JSON-LD carries
+  220 employees, founded 2016, HQ New York, $395M raised, investors, competitors. Reconciliation
+  across sources is only as good as the facts each source yields, and this is where the exact
+  ones live.
+- **Why the reader tools miss it.** Mozilla Readability (and everything built on it — Jina
+  Reader, our Readability path) is an *article* extractor: it locks onto prose and discards
+  `<script>`. Verified against the cloned upstreams: Jina Reader (`third_party/jina`) has zero
+  JSON-LD handling; Crawl4AI (`third_party/crawl4ai`) parses JSON-LD only in its URL-*seeder*
+  (`async_url_seeder.py`) for BM25 ranking, never in the page-content path (its `extract_metadata`
+  pulls title/description/og/twitter only — open feature request #968). So extracting JSON-LD
+  into the content puts us ahead of both for data/gated pages, not at parity.
+- **Scope, kept tight.** Whitelisted types only — Organization/Corporation/LocalBusiness,
+  PostalAddress, FAQPage, Product — flattening `@graph`, coercing `QuantitativeValue`/nested
+  address/number-or-range, stripping inline tags from FAQ answers, deduping, capped at
+  `STRUCTURED_CAP` (2500 chars). Junk types (`WebPage`, `Table`, `BreadcrumbList`) are ignored.
+- **The fetch interplay.** On gated hosts impit is usually rate-limited (Pitchbook returns 429),
+  so the ladder escalates to patchright, whose rendered HTML carries the JSON-LD — so the
+  structured block lands without any new escalation logic. The behaviour prompt was updated to
+  match: data-directory pages (Pitchbook, ZoomInfo, G2, Glassdoor) are now worth fetching for
+  their structured block, with crunchbase.com still the lone unfetchable exception (Turnstile →
+  use `crunchbase_company`).
 
 The cheap, self-hosted rungs always run first; only when every one of them fails `usable()`
 do we fall back to the one **paid** rung (Tavily `/extract`) as a last resort. The
@@ -307,6 +343,43 @@ beats a code edit. Output mapping is deliberately defensive (reads several field
 for funding/round/investors) so a different actor's slightly different shape still maps. Not
 live-verified in CI (a real run costs Apify credits); smoke-test against your chosen actor
 before relying on it.
+
+## No fabricated URLs: every opened URL must have provenance
+
+The model will happily guess a URL from a name — `linkedin.com/company/<slug>`, a deep
+`/about` path, a `crunchbase.com/organization/<slug>` — and a wrong guess resolves to a
+stale decoy page that the model then reports as fact (the original "Hugging Face → 2-10
+employees, 62 followers" bug came from the model inventing `/company/hugging-face`). A
+prompt rule alone does not stop this, so the guard is in code.
+
+- **The rule:** a URL may only be fetched or scraped if it is *verified* — it appeared in a
+  `web_search` result, in this row's own input, or as a link on a page already fetched this
+  run. Anything else is a fabrication and is refused.
+- **The mechanism:** `sink.seen` (`src/tools/sink.ts`) is a set of normalized URLs.
+  `noteUrl` adds to it; `search.ts` notes every result URL, `fetch.ts` notes each fetched
+  URL **and** every link in the returned text (`noteUrlsInText`), and `engine.run` seeds it
+  from the row's values (full URLs and bare domains-as-homepage). `assertVerifiedUrl` throws
+  if a URL is not in `seen`; `fetch_page`, `linkedin_*` (when given a URL, not a name), and
+  `crunchbase_company` (URL mode) all call it first.
+- **Normalization** (`normalizeUrl`) strips protocol, leading `www.`, and trailing slash, and
+  ignores query/hash — so `www.x.com/p/` and `https://x.com/p?utm=1` match, but a different
+  path on a verified host does not. This is why a guessed deep path is still caught even when
+  the host is known.
+- **The recovery path:** the thrown error tells the agent what to do instead (pass the exact
+  company name so `linkedin_company`/`crunchbase_company` resolve the page themselves, or
+  `web_search` first and use a URL from the results). The behaviour prompt
+  (`src/core/agent.ts`) states the same rule up front so the model rarely hits the guard.
+- **Why name-search is the preferred LinkedIn/Crunchbase path:** their actors resolve the
+  right entity from a name, removing the need for a URL at all. A URL is accepted only when it
+  came from search — never constructed. Verified live: `linkedin_company` by name "Hugging
+  Face" resolves the canonical `/company/huggingface` (789 employees, 1.2M followers), whereas
+  the guessed `/company/hugging-face` returns a decoy (2-10 employees, 62 followers). The
+  decoy was purely an artifact of the fabricated slug.
+- **Firmographic bias for company rows:** when a row is about a company, the behaviour prompt
+  biases toward the LinkedIn company page (via `linkedin_company` by name) and the company's
+  own site as the authoritative baseline for headcount/industry/HQ/founded year, reconciled
+  against each other — because aggregator snippets conflict and go stale. This is the source
+  of truth for firmographics; open search fills only what they don't carry.
 
 ## Two frontends, one core — never duplicate run logic
 

@@ -1,7 +1,7 @@
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 import { runActor } from "./apify.ts";
-import { clip, record, type Sink } from "./sink.ts";
+import { assertVerifiedUrl, clip, record, type Sink } from "./sink.ts";
 
 const DEFAULT_ACTOR = "parseforge~crunchbase-scraper";
 
@@ -54,6 +54,8 @@ export function crunchbaseTools(sink: Sink) {
     execute: async ({ company }) => {
       const actor = process.env.CRUNCHBASE_ACTOR ?? DEFAULT_ACTOR;
       const isUrl = /crunchbase\.com\/organization\//i.test(company);
+      if (isUrl)
+        assertVerifiedUrl(sink, company, "Pass the exact company name instead, or web_search for the crunchbase.com/organization page first.");
       const input = isUrl
         ? { startUrls: [{ url: company }], maxItems: 1 }
         : { searchQuery: company, maxItems: 1 };

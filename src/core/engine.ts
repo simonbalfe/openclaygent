@@ -1,7 +1,7 @@
 import type { z } from "zod";
 import { buildAgent, DEFAULT_MODEL } from "./agent.ts";
 import { emptyCost, tavilyUsd } from "./cost.ts";
-import { record, type Sink } from "../tools/sink.ts";
+import { noteUrl, record, type Sink } from "../tools/sink.ts";
 import type { Action, AgentStep, Row, RunCost, RunResult } from "./types.ts";
 
 export interface RunOptions {
@@ -63,7 +63,13 @@ export async function run<S extends z.ZodType>(
   if (action.conditionalRun && !action.conditionalRun(row)) return skippedResult(model);
 
   const started = performance.now();
-  const sink: Sink = { sources: new Set(), log: [], onStep: opts.onStep, cost: emptyCost() };
+  const sink: Sink = { sources: new Set(), seen: new Set(), log: [], onStep: opts.onStep, cost: emptyCost() };
+  for (const value of Object.values(row)) {
+    if (typeof value !== "string") continue;
+    for (const match of value.matchAll(/https?:\/\/\S+/g)) noteUrl(sink, match[0]);
+    for (const match of value.matchAll(/\b(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}\b/gi))
+      noteUrl(sink, `https://${match[0]}`);
+  }
   const { agent, provider } = buildAgent(sink, model);
   const structuringModel = provider.chat(model);
   const { text, missing } = fillTemplate(action.template, row);

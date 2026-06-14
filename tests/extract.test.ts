@@ -1,5 +1,33 @@
 import { expect, test } from "bun:test";
-import { fitToBudget, htmlToMarkdown } from "../src/tools/extract.ts";
+import { extractStructuredData, fitToBudget, htmlToMarkdown } from "../src/tools/extract.ts";
+
+const LD_PAGE = `<html><head>
+  <meta name="description" content="Acme Corp company profile.">
+  <script type="application/ld+json">{"@context":"https://schema.org","@graph":[
+    {"@type":"Organization","name":"Acme Corp","numberOfEmployees":{"@type":"QuantitativeValue","value":220},"foundingDate":"2016","url":"https://acme.com","address":{"@type":"PostalAddress","streetAddress":"20 Jay St","addressLocality":"New York","addressRegion":"NY","postalCode":"11201","addressCountry":{"name":"United States"}}},
+    {"@type":"FAQPage","mainEntity":[{"@type":"Question","name":"How much has Acme raised?","acceptedAnswer":{"@type":"Answer","text":"Acme has raised $395M."}}]}
+  ]}</script>
+  </head><body><main><h1>Acme Corp</h1><p>Request a free trial to view the full profile and financials here.</p></main></body></html>`;
+
+test("extractStructuredData pulls Organization, address, and FAQ facts from JSON-LD", () => {
+  const block = extractStructuredData(LD_PAGE);
+  expect(block).toContain("## Page structured data");
+  expect(block).toContain("employees: 220");
+  expect(block).toContain("founded: 2016");
+  expect(block).toContain("HQ: 20 Jay St, New York, NY, 11201, United States");
+  expect(block).toContain("FAQ — How much has Acme raised? Acme has raised $395M.");
+  expect(block).toContain("Description — Acme Corp company profile.");
+});
+
+test("htmlToMarkdown prepends structured data above the body prose", () => {
+  const md = htmlToMarkdown(LD_PAGE);
+  expect(md.indexOf("Page structured data")).toBeLessThan(md.indexOf("Acme Corp"));
+  expect(md).toContain("Request a free trial");
+});
+
+test("extractStructuredData returns empty when there is no JSON-LD or meta", () => {
+  expect(extractStructuredData("<html><body><p>hi there friend</p></body></html>")).toBe("");
+});
 
 const PAGE = `<html><body>
   <nav><a href="/">Home</a><a href="/about">About</a><a href="/blog">Blog</a></nav>

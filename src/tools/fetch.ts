@@ -4,7 +4,7 @@ import { z } from "zod";
 import { tavilyUsd } from "../core/cost.ts";
 import { fitToBudget, htmlToMarkdown } from "./extract.ts";
 import { impit, tavilyClient } from "./providers.ts";
-import { clip, record, type Sink } from "./sink.ts";
+import { assertVerifiedUrl, clip, noteUrl, noteUrlsInText, record, type Sink } from "./sink.ts";
 
 async function pdfToText(buf: ArrayBuffer): Promise<string> {
   try {
@@ -103,6 +103,8 @@ export function fetchPageTool(sink: Sink) {
       pages: z.array(z.object({ url: z.string(), text: z.string() })),
     }),
     execute: async ({ urls, query }) => {
+      for (const url of urls)
+        assertVerifiedUrl(sink, url, "Only fetch URLs from a web_search result, this row's data, or links on a page you already fetched. web_search first.");
       const raw: { url: string; text: string; via: string; tavilyCredits: number }[] =
         await Promise.all(
           urls.map(async (url: string) => {
@@ -127,7 +129,11 @@ export function fetchPageTool(sink: Sink) {
         }),
       );
       const pages = raw.map((p) => ({ ...p, text: fitToBudget(p.text, query, PAGE_CAP) }));
-      for (const p of pages) sink.sources.add(p.url);
+      for (const p of pages) {
+        sink.sources.add(p.url);
+        noteUrl(sink, p.url);
+        noteUrlsInText(sink, p.text);
+      }
       let tavilyCredits = 0;
       for (const p of pages) tavilyCredits += p.tavilyCredits;
       sink.cost.tavilyCredits += tavilyCredits;

@@ -112,8 +112,9 @@ is recorded without global state:
   escalates when a rung throws or returns zero results; the winning rung is recorded as
   `via` on the step. Returns title/url/snippet. Snippets are usually enough to answer.
 - `fetch_page(urls)` — impit (browser-TLS HTTP) + the extractor
-  (`src/tools/extract.ts`: Readability-first, Crawl4AI prune fallback — see decisions.md)
-  renders the page as markdown for free; PDFs are parsed to text via `unpdf`. When
+  (`src/tools/extract.ts`: JSON-LD/meta structured data prepended, then Readability-first with a
+  Crawl4AI prune fallback — see decisions.md) renders the page as markdown for free; PDFs are
+  parsed to text via `unpdf`. When
   the result looks like a JS shell or block page it escalates to the **patchright** compose
   service (`PATCHRIGHT_URL`, real rendered Chrome — see decisions.md), recorded as
   `via: patchright` in the step. When every self-hosted rung fails, one paid rung runs last —
@@ -131,6 +132,11 @@ head-truncation. See decisions.md (Large pages).
 Cheapest-first: the agent is told to prefer search snippets and only fetch when it needs a
 specific page's full text. Full verbatim examples of what `fetch_page` returns live in
 `docs/examples/` (an index page and a long case-study page, captured live).
+
+Every tool that opens a URL (`fetch_page`, the `linkedin_*` tools, `crunchbase_company`)
+refuses URLs the model invented: a URL must have come from a `web_search` result, this row's
+input, or a link on a page already fetched. See decisions.md (No fabricated URLs) for the
+`sink.seen` / `assertVerifiedUrl` mechanism.
 
 ## The contract
 
@@ -156,8 +162,8 @@ Every run returns `RunResult<S>` (`src/core/types.ts`):
 | `src/tools/search.ts` | `web_search` tool + `searchWeb` (SearXNG→Exa→Tavily ladder) |
 | `src/tools/fetch.ts` | `fetch_page` tool (impit→patchright→Tavily /extract ladder), `usable` shell-page guard |
 | `src/tools/providers.ts` | shared external clients: the `impit` instance, lazy `exaClient`, lazy `tavilyClient` |
-| `src/tools/sink.ts` | the per-run `Sink` (sources, agent log, cost, `onStep`) + `record`/`clip` helpers, shared by every tool |
-| `src/tools/extract.ts` | HTML→markdown: Readability-first (article/blog) → Crawl4AI-prune fallback (structured pages) → Turndown GFM (leftover non-data tables flattened) |
+| `src/tools/sink.ts` | the per-run `Sink` (sources, `seen` URL-provenance set, agent log, cost, `onStep`) + `record`/`clip`/`noteUrl`/`assertVerifiedUrl` helpers, shared by every tool |
+| `src/tools/extract.ts` | HTML→markdown: `extractStructuredData` (JSON-LD + meta, prepended) then Readability-first (article/blog) → Crawl4AI-prune fallback (structured pages) → Turndown GFM (leftover non-data tables flattened) |
 | `src/tools/apify.ts` | shared `runActor` — Apify start→poll→read-dataset helper (+ `usageTotalUsd` cost), used by the LinkedIn and Crunchbase tools |
 | `src/tools/linkedin.ts` | `linkedin_profile` / `linkedin_posts` / `linkedin_post_reactions` / `linkedin_find_people` / `linkedin_company` (Apify HarvestAPI actors; registered only when `APIFY_API_TOKEN` is set) |
 | `src/tools/crunchbase.ts` | `crunchbase_company` — **fallback-only** Crunchbase funding/firmographics via an Apify actor (`CRUNCHBASE_ACTOR`, default `parseforge~crunchbase-scraper`); registered only when `APIFY_API_TOKEN` is set |

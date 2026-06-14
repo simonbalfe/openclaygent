@@ -2,7 +2,7 @@ import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 import { tavilyUsd } from "../core/cost.ts";
 import { exaClient, tavilyClient } from "./providers.ts";
-import { clip, record, type Sink } from "./sink.ts";
+import { clip, noteUrl, record, type Sink } from "./sink.ts";
 
 interface SearchResult {
   title: string;
@@ -103,7 +103,7 @@ export function webSearchTool(sink: Sink) {
   return createTool({
     id: "web_search",
     description:
-      "Search the web. Returns titles, URLs, and content snippets. Snippets are often enough to answer — only call fetch_page if you need the full text of a specific page.",
+      "Search the web. Returns titles, URLs, and content snippets. Use snippets to locate the right source and to answer a field when they cleanly and consistently settle it; when they are missing, ambiguous, or conflict, fetch_page the primary source (or use linkedin_company for firmographics) instead of guessing from a snippet.",
     inputSchema: z.object({
       query: z.string().describe("A specific query. Always include the entity name."),
       max_results: z.number().int().min(1).max(8).default(5),
@@ -115,7 +115,10 @@ export function webSearchTool(sink: Sink) {
     }),
     execute: async ({ query, max_results }) => {
       const { results, via, exaUsd, tavilyCredits } = await searchWeb(query, max_results);
-      for (const r of results) sink.sources.add(r.url);
+      for (const r of results) {
+        sink.sources.add(r.url);
+        noteUrl(sink, r.url);
+      }
       sink.cost.exa += exaUsd;
       sink.cost.tavilyCredits += tavilyCredits;
       record(sink, {

@@ -213,8 +213,152 @@ function pruneMarkdown(html: string, baseUrl?: string): string {
   return tidy(buildConverter(baseUrl).turndown($(body).html() ?? ""));
 }
 
+type LdNode = Record<string, unknown>;
+
+const STRUCTURED_CAP = 2500;
+
+function asArray<T>(v: T | T[] | undefined | null): T[] {
+  if (v === undefined || v === null) return [];
+  return Array.isArray(v) ? v : [v];
+}
+
+function ldString(v: unknown): string | null {
+  if (typeof v === "string") return v.replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim() || null;
+  if (typeof v === "number") return String(v);
+  return null;
+}
+
+function typesOf(node: LdNode): string[] {
+  const t = node["@type"];
+  if (typeof t === "string") return [t];
+  if (Array.isArray(t)) return t.filter((x): x is string => typeof x === "string");
+  return [];
+}
+
+function collectLdNodes(data: unknown, out: LdNode[]): void {
+  if (Array.isArray(data)) {
+    for (const d of data) collectLdNodes(d, out);
+    return;
+  }
+  if (data && typeof data === "object") {
+    const obj = data as LdNode;
+    if ("@graph" in obj) collectLdNodes(obj["@graph"], out);
+    if ("@type" in obj) out.push(obj);
+  }
+}
+
+function renderAddress(a: unknown): string | null {
+  if (typeof a === "string") return ldString(a);
+  if (a && typeof a === "object") {
+    const o = a as LdNode;
+    const country =
+      o.addressCountry && typeof o.addressCountry === "object"
+        ? ldString((o.addressCountry as LdNode).name)
+        : ldString(o.addressCountry);
+    const parts = [
+      ldString(o.streetAddress),
+      ldString(o.addressLocality),
+      ldString(o.addressRegion),
+      ldString(o.postalCode),
+      country,
+    ].filter(Boolean);
+    return parts.length ? parts.join(", ") : null;
+  }
+  return null;
+}
+
+function renderEmployees(v: unknown): string | null {
+  if (typeof v === "number" || typeof v === "string") return ldString(v);
+  if (v && typeof v === "object") {
+    const o = v as LdNode;
+    const value = ldString(o.value);
+    if (value) return value;
+    const min = ldString(o.minValue);
+    const max = ldString(o.maxValue);
+    if (min && max) return `${min}-${max}`;
+  }
+  return null;
+}
+
+function renderLdNode(node: LdNode): string[] {
+  const types = typesOf(node);
+  const is = (re: RegExp) => types.some((t) => re.test(t));
+  const lines: string[] = [];
+  if (is(/(^|:)(Organization|Corporation|LocalBusiness|NewsMediaOrganization)$/i)) {
+    const facts = [
+      ldString(node.name) && `name: ${ldString(node.name)}`,
+      renderEmployees(node.numberOfEmployees) && `employees: ${renderEmployees(node.numberOfEmployees)}`,
+      ldString(node.foundingDate) && `founded: ${ldString(node.foundingDate)}`,
+      renderAddress(node.address) && `HQ: ${renderAddress(node.address)}`,
+      ldString(node.url) && `url: ${ldString(node.url)}`,
+    ].filter(Boolean);
+    if (facts.length) lines.push(`Organization — ${facts.join("; ")}`);
+  } else if (is(/^PostalAddress$/i)) {
+    const addr = renderAddress(node);
+    if (addr) lines.push(`Address — ${addr}`);
+  } else if (is(/FAQPage$/i)) {
+    for (const q of asArray(node.mainEntity as LdNode | LdNode[])) {
+      const question = ldString((q as LdNode).name);
+      const accepted = (q as LdNode).acceptedAnswer;
+      const answer =
+        accepted && typeof accepted === "object" ? ldString((accepted as LdNode).text) : ldString(accepted);
+      if (question && answer) lines.push(`FAQ — ${question} ${answer}`);
+    }
+  } else if (is(/^Product$/i)) {
+    const offer = asArray(node.offers as LdNode | LdNode[])[0];
+    const price = offer
+      ? [ldString(offer.price), ldString(offer.priceCurrency)].filter(Boolean).join(" ")
+      : null;
+    const rating =
+      node.aggregateRating && typeof node.aggregateRating === "object"
+        ? ldString((node.aggregateRating as LdNode).ratingValue)
+        : null;
+    const facts = [
+      ldString(node.name) && `name: ${ldString(node.name)}`,
+      price && `price: ${price}`,
+      rating && `rating: ${rating}`,
+    ].filter(Boolean);
+    if (facts.length) lines.push(`Product — ${facts.join("; ")}`);
+  }
+  return lines;
+}
+
+export function extractStructuredData(html: string): string {
+  const $ = cheerio.load(html);
+  const nodes: LdNode[] = [];
+  $('script[type="application/ld+json"]').each((_, el) => {
+    const raw = $(el).text();
+    if (!raw.trim()) return;
+    try {
+      collectLdNodes(JSON.parse(raw), nodes);
+    } catch {}
+  });
+
+  const seen = new Set<string>();
+  const lines: string[] = [];
+  for (const node of nodes)
+    for (const line of renderLdNode(node))
+      if (!seen.has(line)) {
+        seen.add(line);
+        lines.push(line);
+      }
+
+  const desc =
+    $('meta[name="description"]').attr("content") ?? $('meta[property="og:description"]').attr("content");
+  const cleanDesc = ldString(desc);
+  if (cleanDesc && !seen.has(`Description — ${cleanDesc}`)) lines.unshift(`Description — ${cleanDesc}`);
+
+  if (!lines.length) return "";
+  let block = lines.join("\n");
+  if (block.length > STRUCTURED_CAP) block = `${block.slice(0, STRUCTURED_CAP)}…`;
+  return `## Page structured data\n${block}`;
+}
+
 export function htmlToMarkdown(html: string, baseUrl?: string): string {
-  return readabilityMarkdown(html, baseUrl) ?? pruneMarkdown(html, baseUrl);
+  const structured = extractStructuredData(html);
+  const body = readabilityMarkdown(html, baseUrl) ?? pruneMarkdown(html, baseUrl);
+  if (!structured) return body;
+  return body ? `${structured}\n\n${body}` : structured;
 }
 
 function tokenize(s: string): string[] {
