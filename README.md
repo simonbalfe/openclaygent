@@ -76,7 +76,8 @@ service URLs are automatic (`localhost:8888` / `localhost:9223`); you never set 
 are extensions you only reach when the free rungs miss.
 
 Prefer to drive it yourself? `bun install && cp .env.example .env && docker compose up -d` (that
-last command builds and starts SearXNG, patchright, and the API together), then edit `.env`.
+last command starts SearXNG + the API and **pulls** the prebuilt patchright image from GHCR — no
+local Chromium build), then edit `.env`.
 
 **Required** — one key, the model brain:
 
