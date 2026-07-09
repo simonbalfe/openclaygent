@@ -5,6 +5,14 @@ import { assertVerifiedUrl, clip, record, type Sink } from "./sink.ts";
 
 const LINKEDIN_URL = /^https?:\/\/([\w-]+\.)*linkedin\.com\//i;
 
+const ACTORS = {
+  profile: process.env.APIFY_LINKEDIN_PROFILE_ACTOR ?? "harvestapi~linkedin-profile-scraper",
+  posts: process.env.APIFY_LINKEDIN_POSTS_ACTOR ?? "harvestapi~linkedin-profile-posts",
+  reactions: process.env.APIFY_LINKEDIN_REACTIONS_ACTOR ?? "harvestapi~linkedin-post-reactions",
+  employees: process.env.APIFY_LINKEDIN_EMPLOYEES_ACTOR ?? "harvestapi~linkedin-company-employees",
+  company: process.env.APIFY_LINKEDIN_COMPANY_ACTOR ?? "harvestapi~linkedin-company",
+};
+
 interface RawProfile {
   firstName?: string;
   lastName?: string;
@@ -82,7 +90,7 @@ export function linkedinTools(sink: Sink) {
     outputSchema: z.object({ profile: z.unknown() }),
     execute: async ({ url }) => {
       assertVerifiedUrl(sink, url, "web_search for the person first, then pass the LinkedIn URL from the results.");
-      const { items, usd } = await runActor<RawProfile>("harvestapi~linkedin-profile-scraper", { url });
+      const { items, usd } = await runActor<RawProfile>(ACTORS.profile, { url });
       sink.cost.apify += usd;
       const p = items[0];
       const profile = p && {
@@ -125,7 +133,7 @@ export function linkedinTools(sink: Sink) {
     outputSchema: z.object({ posts: z.array(z.unknown()) }),
     execute: async ({ profileUrl, maxPosts }) => {
       assertVerifiedUrl(sink, profileUrl, "web_search for the profile first, then pass the LinkedIn URL from the results.");
-      const { items, usd } = await runActor<RawPost>("harvestapi~linkedin-profile-posts", {
+      const { items, usd } = await runActor<RawPost>(ACTORS.posts, {
         targetUrls: [profileUrl],
         maxPosts,
       });
@@ -161,7 +169,7 @@ export function linkedinTools(sink: Sink) {
     outputSchema: z.object({ reactions: z.array(z.unknown()) }),
     execute: async ({ postUrl, maxReactions }) => {
       assertVerifiedUrl(sink, postUrl, "web_search for the post first, then pass the LinkedIn URL from the results.");
-      const { items, usd } = await runActor<RawReaction>("harvestapi~linkedin-post-reactions", {
+      const { items, usd } = await runActor<RawReaction>(ACTORS.reactions, {
         posts: [postUrl],
         maxItems: maxReactions,
       });
@@ -210,7 +218,7 @@ export function linkedinTools(sink: Sink) {
     execute: async ({ company, jobTitles, searchQuery, maxItems, findEmails }) => {
       if (LINKEDIN_URL.test(company))
         assertVerifiedUrl(sink, company, "Pass the exact company name instead, or web_search for the company's LinkedIn page first.");
-      const { items, usd } = await runActor<RawEmployee>("harvestapi~linkedin-company-employees", {
+      const { items, usd } = await runActor<RawEmployee>(ACTORS.employees, {
         companies: [company],
         ...(jobTitles?.length ? { jobTitles } : {}),
         ...(searchQuery ? { searchQuery } : {}),
@@ -260,7 +268,7 @@ export function linkedinTools(sink: Sink) {
       const isUrl = /linkedin\.com\/company\//i.test(company);
       if (isUrl)
         assertVerifiedUrl(sink, company, "Pass the exact company name instead, or web_search for the company's LinkedIn page first.");
-      const { items, usd } = await runActor<RawCompany>("harvestapi~linkedin-company", {
+      const { items, usd } = await runActor<RawCompany>(ACTORS.company, {
         ...(isUrl ? { companies: [company] } : { searches: [company] }),
       });
       sink.cost.apify += usd;

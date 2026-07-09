@@ -180,7 +180,7 @@ Every run returns `RunResult<S>` (`src/core/types.ts`):
 | `src/tools/sink.ts` | the per-run `Sink` (sources, `seen` URL-provenance set, agent log, cost, `onStep`) + `record`/`clip`/`noteUrl`/`assertVerifiedUrl` helpers, shared by every tool |
 | `src/tools/extract.ts` | HTML→markdown: `extractStructuredData` (JSON-LD + meta, prepended) then Readability-first (article/blog) → Crawl4AI-prune fallback (structured pages) → Turndown GFM (leftover non-data tables flattened) |
 | `src/tools/apify.ts` | shared `runActor` — Apify start→poll→read-dataset helper (+ `usageTotalUsd` cost), used by the LinkedIn and Crunchbase tools |
-| `src/tools/linkedin.ts` | `linkedin_profile` / `linkedin_posts` / `linkedin_post_reactions` / `linkedin_find_people` / `linkedin_company` (Apify HarvestAPI actors; registered only when `APIFY_API_TOKEN` is set) |
+| `src/tools/linkedin.ts` | `linkedin_profile` / `linkedin_posts` / `linkedin_post_reactions` / `linkedin_find_people` / `linkedin_company` (Apify HarvestAPI actors, each overridable via `APIFY_LINKEDIN_*_ACTOR` with the HarvestAPI ids as defaults; registered only when `APIFY_API_TOKEN` is set) |
 | `src/tools/crunchbase.ts` | `crunchbase_company` — **fallback-only** Crunchbase funding/firmographics via an Apify actor (`CRUNCHBASE_ACTOR`, default `parseforge~crunchbase-scraper`); registered only when `APIFY_API_TOKEN` is set |
 | `src/core/agent.ts` | per-run cost-tapped OpenRouter provider (`buildOpenRouter`), default model, research behaviour, `buildAgent`, tools-disabled `buildFinalizer` |
 | `src/core/cost.ts` | `CostAccumulator` + `emptyCost`, Tavily credit→USD rate, `extractCostUsd` (reads `usage.cost` from JSON or SSE OpenRouter responses) |
