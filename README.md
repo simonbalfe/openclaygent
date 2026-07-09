@@ -62,19 +62,21 @@ LLM, Exa, Apify, and Tavily.
 
 ## Setup
 
-One command walks you through it — checks Bun/Docker, installs deps, creates `.env`, asks only
-for the keys that matter, and starts the free stack:
+One command does everything — installs Bun if you don't have it, installs deps, creates `.env`,
+asks only for the keys that matter, then brings up the **free search + fetch stack _and_ the API
+server**:
 
 ```bash
-bun run setup
+./setup.sh
 ```
 
-That's the whole thing. Cost is the point, so the core is the **free, self-hosted search + fetch
-stack** (SearXNG + patchright) that `setup` starts with Docker — you bring one key (the model) and
-they do the web work for free. The service URLs are automatic (`localhost:8888` / `localhost:9223`);
-you never set them. Paid providers are extensions you only reach when the free rungs miss.
+When it finishes, the API is live at `http://localhost:8080/docs` and the CLI is ready via
+`bun run cli`. You bring one key (the model); SearXNG and patchright do the web work for free. The
+service URLs are automatic (`localhost:8888` / `localhost:9223`); you never set them. Paid providers
+are extensions you only reach when the free rungs miss.
 
-Prefer to do it by hand? `bun install && cp .env.example .env && docker compose up -d`, then edit `.env`.
+Prefer to drive it yourself? `bun install && cp .env.example .env && docker compose up -d` (that
+last command builds and starts SearXNG, patchright, and the API together), then edit `.env`.
 
 **Required** — one key, the model brain:
 

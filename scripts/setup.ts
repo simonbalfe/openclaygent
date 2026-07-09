@@ -152,16 +152,25 @@ function main(): void {
     console.log("\nNo key changes.");
   }
 
+  let stackUp = false;
   if (dockerOk) {
-    const start = prompt("\nStart the free local stack now (docker compose up -d)? [Y/n]");
+    const start = prompt(
+      "\nStart everything now — free search + fetch stack AND the API server (docker compose up -d)? [Y/n]",
+    );
     if (start === null || start.trim().toLowerCase() !== "n") {
-      run(["docker", "compose", "up", "-d"]);
+      stackUp = run(["docker", "compose", "up", "-d", "--build"]) === 0;
     }
   }
 
-  console.log("\nDone. Next:");
-  console.log("  bun run cli -- --help     # the CLI");
-  console.log("  bun run api               # the HTTP API on :8080 (/docs for the playground)");
+  console.log("\nDone.");
+  if (stackUp) {
+    console.log("  API is live:  http://localhost:8080/docs   (POST http://localhost:8080/run)");
+    console.log("  CLI:          bun run cli -- --help");
+  } else {
+    console.log("  Start it all:  docker compose up -d       # free stack + API on :8080");
+    console.log("  CLI:           bun run cli -- --help");
+    console.log("  API only:      bun run api                # http://localhost:8080/docs");
+  }
 }
 
 main();

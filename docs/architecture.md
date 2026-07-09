@@ -257,7 +257,10 @@ Routes:
 - `GET /health` — liveness check.
 
 Port is `PORT` (default 8080). No auth — front it with whatever the deploy provides if you
-expose it publicly (it spends LLM credits per call).
+expose it publicly (it spends LLM credits per call). `docker compose up -d` runs the API as the
+`api` service (built from the root `Dockerfile`, `entrypoint` overridden to `src/api.ts`,
+`env_file: .env`, waits on SearXNG's healthcheck) alongside the search + fetch stack; `bun run api`
+is the local-dev alternative.
 
 ```bash
 bun run api        # serve on :8080  (bun run api:dev to watch)

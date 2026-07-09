@@ -1,4 +1,22 @@
 services:
+  api:
+    build: .
+    entrypoint: ["bun", "run", "src/api.ts"]
+    container_name: openclaygent-api
+    env_file: .env
+    environment:
+      - SEARXNG_URL=http://searxng:8080
+      - PATCHRIGHT_URL=http://patchright:9223
+      - PORT=8080
+    ports:
+      - "8080:8080"
+    depends_on:
+      searxng:
+        condition: service_healthy
+      patchright:
+        condition: service_started
+    restart: unless-stopped
+
   claygent:
     build: .
     profiles: ["cli"]
@@ -7,8 +25,10 @@ services:
       - SEARXNG_URL=http://searxng:8080
       - PATCHRIGHT_URL=http://patchright:9223
     depends_on:
-      - searxng
-      - patchright
+      searxng:
+        condition: service_healthy
+      patchright:
+        condition: service_started
 
   patchright:
     build: ./patchright
@@ -41,4 +61,10 @@ services:
       - EVOMI_PASSWORD=${EVOMI_PASSWORD:-}
       - EVOMI_GATEWAY=${EVOMI_GATEWAY:-}
     entrypoint: ["/bin/sh", "/searxng-wrapper.sh"]
+    healthcheck:
+      test: ["CMD", "wget", "-qO", "/dev/null", "http://localhost:8080/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
     restart: unless-stopped
