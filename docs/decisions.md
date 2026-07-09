@@ -403,7 +403,9 @@ self-hosted rungs:
 
 HTTP rather than Playwright's websocket protocol because Bun's ws client hangs against
 Playwright's server (Node connects fine); the HTTP seam also keeps `patchright` out of
-this package entirely. Each rung auto-skips when its env is unset (`PATCHRIGHT_URL`, `EVOMI_*`).
+this package entirely. `PATCHRIGHT_URL` auto-defaults to the compose service at
+`http://localhost:9223` (set it empty to disable rendered fetch); the proxy and solver rungs
+still auto-skip when their env is unset (`EVOMI_*`, `CAPSOLVER_API_KEY`).
 Step log records the winning rung as `via: impit | patchright | patchright+proxy`, plus a
 per-URL `trail` naming each rung tried and why it escalated (`impit: bot-wall/shell (812c)`,
 `patchright: empty`), so an early jump to Tavily is explainable rather than silent.

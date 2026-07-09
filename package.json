@@ -9,6 +9,7 @@
     "openclaygent": "src/cli.ts"
   },
   "scripts": {
+    "setup": "bun run scripts/setup.ts",
     "cli": "bun run src/cli.ts",
     "api": "bun run src/api.ts",
     "api:dev": "bun --watch run src/api.ts",

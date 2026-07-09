@@ -33,8 +33,12 @@ interface RungResult {
   tavilyCredits: number;
 }
 
+function searxngBase(): string {
+  return process.env.SEARXNG_URL ?? "http://localhost:8888";
+}
+
 async function searxngRung(query: string, n: number): Promise<RungResult> {
-  const results = await searxngSearch(process.env.SEARXNG_URL!, query, n);
+  const results = await searxngSearch(searxngBase(), query, n);
   return { results, exaUsd: 0, tavilyCredits: 0 };
 }
 
@@ -73,7 +77,7 @@ interface SearchRung {
 }
 
 const SEARCH_LADDER: SearchRung[] = [
-  { name: "searxng", enabled: () => Boolean(process.env.SEARXNG_URL), search: searxngRung },
+  { name: "searxng", enabled: () => searxngBase() !== "", search: searxngRung },
   { name: "exa", enabled: () => Boolean(process.env.EXA_API_KEY), search: exaSearch },
   { name: "tavily", enabled: () => Boolean(process.env.TAVILY_API_KEY), search: tavilySearch },
 ];
@@ -111,7 +115,9 @@ export async function searchWeb(
   if (emptyVia) return { results: [], via: emptyVia, exaUsd: 0, tavilyCredits: 0, trail };
   throw lastError instanceof Error
     ? lastError
-    : new Error("No search provider configured: set SEARXNG_URL, EXA_API_KEY, or TAVILY_API_KEY");
+    : new Error(
+        "No search provider configured: run `docker compose up -d` for free search, or set EXA_API_KEY / TAVILY_API_KEY",
+      );
 }
 
 export function webSearchTool(sink: Sink, cache: Cache) {

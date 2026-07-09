@@ -41,11 +41,15 @@ function usable(text: string): boolean {
   return true;
 }
 
+function patchrightBase(): string {
+  return process.env.PATCHRIGHT_URL ?? "http://localhost:9223";
+}
+
 async function patchrightFetch(
   url: string,
   opts: { proxy?: boolean; solve?: boolean } = {},
 ): Promise<string> {
-  const base = process.env.PATCHRIGHT_URL;
+  const base = patchrightBase();
   if (!base) return "";
   const q = new URLSearchParams({ url });
   if (opts.proxy) q.set("proxy", "1");
@@ -116,7 +120,7 @@ function unusableReason(text: string, status?: number): string {
 
 async function fetchLadder(url: string): Promise<FetchResult> {
   const trail: string[] = [];
-  const patchrightEnabled = Boolean(process.env.PATCHRIGHT_URL);
+  const patchrightEnabled = patchrightBase() !== "";
 
   const local = await impitFetch(url);
   if (usable(local.text)) {

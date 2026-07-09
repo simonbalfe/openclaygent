@@ -8,6 +8,7 @@ its env is unset) — mechanism and rung order in `docs/architecture.md` (The to
 
 ## Run it
 
+- `bun run setup` — one-shot interactive setup (`scripts/setup.ts`): checks Bun/Docker, `bun install`, creates `.env`, prompts for keys (OpenRouter required; Exa/Tavily/Apify optional), offers `docker compose up -d`. The service URLs are auto-defaulted in code, never prompted.
 - `bun run cli -- --help` — the CLI entry (`src/cli.ts`); see `docs/architecture.md` (CLI).
 - `bun run api` — the HTTP entry (`src/api.ts`, Hono + OpenAPI): `POST /run`, `/docs`, `/openapi.json`, `/health` on `PORT` (default 8080). Both entries share `core/action.ts` + `runTable` — never duplicate run logic into either. See `docs/architecture.md` (HTTP API).
 - `bun test` — the test suite (`tests/`); the live test is skipped unless `RUN_LIVE=1`.
@@ -15,7 +16,7 @@ its env is unset) — mechanism and rung order in `docs/architecture.md` (The to
 - `bun run knip` — dead-code / unused-export / unused-dep check (config: `knip.json`; entries are the CLI (auto-detected from package.json) + tests).
 - `docker compose up -d` — starts the local stack: SearXNG on :8888 (`searxng/settings.yml` enables the JSON API the tool needs; `searxng/entrypoint.sh` injects the Evomi residential proxy from `EVOMI_*` env into `outgoing.proxies` at start, so engine scrapes are not CAPTCHA-blocked — see `docs/decisions.md`, Search ladder) and the patchright fetch service on :9223. The `claygent` CLI itself is `profiles: [cli]`, so `up` never starts it.
 - `docker compose run --rm claygent <cli args>` — the CLI containerized (`Dockerfile`, profile `cli` so `up` never starts it); talks to SearXNG at `http://searxng:8080` inside the stack.
-- Needs `OPENROUTER_API_KEY` + `EXA_API_KEY` in `.env` (Bun auto-loads it); `SEARXNG_URL=http://localhost:8888` routes search through the compose service.
+- Needs `OPENROUTER_API_KEY` in `.env` (Bun auto-loads it). `SEARXNG_URL` / `PATCHRIGHT_URL` are auto-defaulted to the compose ports (`localhost:8888` / `localhost:9223`); set them only to point elsewhere, or empty to disable that rung. `EXA_API_KEY` is optional (paid search fallback + no-Docker path).
 
 ## Key files
 

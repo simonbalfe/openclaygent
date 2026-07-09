@@ -62,28 +62,25 @@ LLM, Exa, Apify, and Tavily.
 
 ## Setup
 
-Cost is the whole point — so the core setup is the **free, self-hosted search + fetch stack**.
-You bring one key (the model); SearXNG and patchright do the web work for free. Paid providers
-are extensions you only reach when the free rungs miss.
+One command walks you through it — checks Bun/Docker, installs deps, creates `.env`, asks only
+for the keys that matter, and starts the free stack:
 
 ```bash
-bun install
-cp .env.example .env          # add OPENROUTER_API_KEY
-docker compose up -d          # SearXNG (free search) + patchright (free fetch) — the cost core
+bun run setup
 ```
+
+That's the whole thing. Cost is the point, so the core is the **free, self-hosted search + fetch
+stack** (SearXNG + patchright) that `setup` starts with Docker — you bring one key (the model) and
+they do the web work for free. The service URLs are automatic (`localhost:8888` / `localhost:9223`);
+you never set them. Paid providers are extensions you only reach when the free rungs miss.
+
+Prefer to do it by hand? `bun install && cp .env.example .env && docker compose up -d`, then edit `.env`.
 
 **Required** — one key, the model brain:
 
 | Variable | What it's for | Get one |
 |---|---|---|
 | `OPENROUTER_API_KEY` | Drives any model (DeepSeek default — cheap; Claude/GPT/Llama per run) | [openrouter.ai/keys](https://openrouter.ai/keys) |
-
-**The free stack** — essential to the cost story, started by `docker compose up`:
-
-| Variable | What it does |
-|---|---|
-| `SEARXNG_URL` | Free self-hosted search — the first (and usually only) search rung |
-| `PATCHRIGHT_URL` | Free headless-browser fetch for JS-heavy / bot-walled pages |
 
 **Paid extensions** — optional; each only fires when the free rung above it misses:
 

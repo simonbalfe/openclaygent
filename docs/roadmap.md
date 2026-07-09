@@ -14,7 +14,7 @@ the gap it closes (vs Clay's Claygent and the Ferret reference).
 - [x] `Sink` → `sources` + `agentLog` provenance
 - [x] Conditional-run skip (the credit saver)
 - [x] CLI — single (`--input`) and batch (`--rows` JSON/CSV), `--require`, `--json`, `--out`, `--model`
-- [x] SearXNG search backend — `SEARXNG_URL` env switches `web_search` to a local SearXNG instance (zero-cost search); unset = Exa
+- [x] SearXNG search backend — `web_search` auto-uses the local SearXNG instance at `http://localhost:8888` (zero-cost search); `SEARXNG_URL` overrides the host, `SEARXNG_URL=` (empty) disables the rung so it falls through to Exa
 - [x] Fetch ladder — impit (browser TLS) + extraction (`src/tools/extract.ts`: Readability-first → Crawl4AI prune fallback, PDFs via `unpdf`), escalating through patchright (direct → +proxy → +solver) to paid Tavily `/extract` (always-live). Mechanism in `architecture.md` (The tools) + `decisions.md` (Fetch ladder)
 - [x] LinkedIn tools — `linkedin_profile` / `linkedin_posts` / `linkedin_post_reactions` / `linkedin_find_people` / `linkedin_company` (exact headcount, size range, industry, HQ, founded year, follower count) via Apify HarvestAPI actors (no-cookie, ~$2–4/1k items; employee search $4/1k, 3x with emails), env-gated on `APIFY_API_TOKEN`
 - [x] `buildSchema` — turn a CLI JSON Schema / short form into the action's Zod `output`

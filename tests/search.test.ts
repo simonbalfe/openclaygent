@@ -37,7 +37,7 @@ test("ladder: all rungs empty returns the empty list, no error", async () => {
 });
 
 test("ladder: no provider configured throws", async () => {
-  setEnv({ SEARXNG_URL: undefined, EXA_API_KEY: undefined, TAVILY_API_KEY: undefined });
+  setEnv({ SEARXNG_URL: "", EXA_API_KEY: undefined, TAVILY_API_KEY: undefined });
 
   expect(searchWeb("q", 5)).rejects.toThrow("No search provider configured");
 });
