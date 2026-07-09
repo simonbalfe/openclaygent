@@ -115,10 +115,12 @@ rather than rejecting the whole batch, so one bad row never discards the others.
 is recorded without global state:
 
 - `web_search(query)` — a cheapest-first provider ladder: self-hosted SearXNG
-  (`SEARXNG_URL`, zero-cost) → Exa (`EXA_API_KEY`, /search with inline contents) →
-  Tavily (`TAVILY_API_KEY`). A rung is skipped when its env is unset and the ladder
-  escalates when a rung throws or returns zero results; the winning rung is recorded as
-  `via` on the step. Returns title/url/snippet. Snippets are usually enough to answer.
+  (`SEARXNG_URL`, zero-cost; routes its engine scrapes through the Evomi residential proxy
+  so they are not CAPTCHA-blocked — see decisions.md, Search ladder) → Exa (`EXA_API_KEY`,
+  /search with inline contents) → Tavily (`TAVILY_API_KEY`). A rung is skipped when its env
+  is unset and the ladder escalates when a rung throws or returns zero results; the winning
+  rung is recorded as `via` on the step. Returns title/url/snippet. Snippets are usually
+  enough to answer.
 - `fetch_page(urls)` — impit (browser-TLS HTTP) + the extractor
   (`src/tools/extract.ts`: JSON-LD/meta structured data prepended, then Readability-first with a
   Crawl4AI prune fallback — see decisions.md) renders the page as markdown for free; PDFs are
@@ -139,7 +141,7 @@ head-truncation. See decisions.md (Large pages).
 
 Cheapest-first: the agent is told to prefer search snippets and only fetch when it needs a
 specific page's full text. Full verbatim examples of what `fetch_page` returns live in
-`docs/examples/` (an index page and a long case-study page, captured live).
+`docs/examples/` (two `fetch_page` capture pages and a long agent-flow case study, captured live).
 
 Every tool that opens a URL (`fetch_page`, the `linkedin_*` tools, `crunchbase_company`)
 refuses URLs the model invented: a URL must have come from a `web_search` result, this row's
@@ -156,8 +158,10 @@ Every run returns `RunResult<S>` (`src/core/types.ts`):
 - `sources` — every URL the tools touched.
 - `agentLog` — ordered `AgentStep[]`, the replay log of search/fetch/answer steps. Each
   step carries `results: StepResult[]` — what the tool actually returned (title, URL,
-  preview snippet, fetched char count) — and `cost` (USD for that paid tool step) — so a
-  run is auditable after the fact.
+  preview snippet, fetched char count) — `cost` (USD for that paid tool step), and a
+  `trail` of every ladder rung attempted with the reason it escalated (search: on the
+  step; fetch: per-URL on each result) — so a run is auditable after the fact and the
+  cheapest-first waterfall is visible without `--verbose`.
 - `cost` — `RunCost`: exact spend for the run, `{ total, llm, tools, byProvider, tavilyCredits }`,
   all real provider figures (never estimated). Mechanism in `decisions.md` (Cost accounting).
 - `tokens`, `durationMs`, `model` — usage and provenance.
@@ -225,10 +229,11 @@ detects which (a real JSON Schema has `type:"object"`/`properties`) and routes a
 either way the engine receives a Zod schema. `--json` prints raw JSON; `--out <file>` writes
 results to disk; `--model <id>` overrides the model per run; `--max-steps <n>` caps the agent
 loop iterations (default 5); `--concurrency <n>` sets how many rows run in parallel
-(default 5, wired as `RunOptions.concurrency`); `--verbose` streams agent steps
-live as they happen with result previews — search hits (title, URL, snippet), fetched page
-sizes and text previews (wired as `RunOptions.onStep`, fired by the same `record()` that
-appends to `agentLog`; goes to stderr under `--json` so stdout stays pipeable).
+(default 5, wired as `RunOptions.concurrency`). Agent steps **always stream live** as they
+happen — query, provider used (`via`), and the ladder `trail` with escalation reasons (wired
+as `RunOptions.onStep`, fired by the same `record()` that appends to `agentLog`; goes to
+stderr under `--json` so stdout stays pipeable). `--verbose` adds result previews to that
+live trace — search hits (title, URL, snippet) and fetched page sizes/text previews.
 
 ## HTTP API
 

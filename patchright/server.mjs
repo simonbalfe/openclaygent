@@ -7,6 +7,7 @@ const EVOMI = {
   gateway: process.env.EVOMI_GATEWAY,
 };
 const CAPSOLVER_KEY = process.env.CAPSOLVER_API_KEY;
+const TWOCAPTCHA_KEY = process.env.TWOCAPTCHA_API_KEY;
 const hasEvomi = EVOMI.user && EVOMI.pass && EVOMI.gateway;
 
 const CHALLENGE = /just a moment|checking your browser|cf-browser-verification|verifying you are human|enable javascript|captcha/i;
@@ -14,6 +15,42 @@ const TURNSTILE_SITEKEY = /(?:data-sitekey|sitekey["'\s:=]+)["']?(0x[0-9A-Za-z_-
 
 function turnstileSolved(html) {
   return /cf-turnstile-response["'\s:=]+[^"'\s>]{20,}|name=["']cf-turnstile-response["'][^>]*value=["'][^"'\s>]{20,}/i.test(html);
+}
+
+function widgetSitekey(html) {
+  const attr = html.match(/data-sitekey=["']([0-9A-Za-z_-]+)["']/i);
+  if (attr) return attr[1];
+  const frame = html.match(/<iframe[^>]+src=["'][^"']*[?&](?:sitekey|k)=([^&"'#]+)/i);
+  return frame ? decodeURIComponent(frame[1]) : null;
+}
+
+function detect(html, cookies = "") {
+  const s = html || "";
+  const h = s.toLowerCase();
+  const c = (cookies || "").toLowerCase();
+
+  if (/just a moment|cf-browser-verification|cdn-cgi\/challenge-platform/.test(h)) return { vendor: "cf-interstitial", sitekey: null };
+  if (/captcha-delivery\.com|geo\.captcha-delivery/.test(h) || /\bdatadome\b/.test(c)) return { vendor: "datadome", sitekey: null };
+  if (/\b_abck\b|\bak_bmsc\b/.test(c)) return { vendor: "akamai", sitekey: null };
+  if (/px-captcha|captcha\.px-cdn/.test(h) || /\b_px\w*\b/.test(c)) return { vendor: "perimeterx", sitekey: null };
+
+  const turnstile =
+    /<iframe[^>]+src=["'][^"']*challenges\.cloudflare\.com/i.test(s) ||
+    /class=["'][^"']*\bcf-turnstile\b/i.test(s) ||
+    /name=["']cf-turnstile-response["']/i.test(s);
+  const hcaptcha =
+    /<iframe[^>]+src=["'][^"']*hcaptcha\.com/i.test(s) ||
+    /class=["'][^"']*\bh-captcha\b/i.test(s) ||
+    /name=["']h-captcha-response["']/i.test(s);
+  const recaptcha =
+    /<iframe[^>]+src=["'][^"']*(?:google\.com|recaptcha\.net)\/recaptcha/i.test(s) ||
+    /class=["'][^"']*\bg-recaptcha\b/i.test(s) ||
+    /id=["']g-recaptcha-response["']/i.test(s);
+
+  if (turnstile) return { vendor: "turnstile", sitekey: widgetSitekey(s) };
+  if (hcaptcha) return { vendor: "hcaptcha", sitekey: widgetSitekey(s) };
+  if (recaptcha) return { vendor: "recaptcha", sitekey: widgetSitekey(s) };
+  return null;
 }
 
 async function launchWithRetry(attempts = 6) {
@@ -43,51 +80,79 @@ function stickySession() {
   };
 }
 
-async function capsolve(url, capStr) {
-  const create = await fetch("https://api.capsolver.com/createTask", {
+const SOLVERS = {
+  capsolver: {
+    key: CAPSOLVER_KEY,
+    base: "https://api.capsolver.com",
+    task: {
+      turnstile: (url, sitekey) => ({ type: "AntiTurnstileTaskProxyLess", websiteURL: url, websiteKey: sitekey }),
+      hcaptcha: (url, sitekey) => ({ type: "HCaptchaTaskProxyLess", websiteURL: url, websiteKey: sitekey }),
+      recaptcha: (url, sitekey) => ({ type: "ReCaptchaV2TaskProxyLess", websiteURL: url, websiteKey: sitekey }),
+    },
+  },
+  twocaptcha: {
+    key: TWOCAPTCHA_KEY,
+    base: "https://api.2captcha.com",
+    task: {
+      turnstile: (url, sitekey) => ({ type: "TurnstileTaskProxyless", websiteURL: url, websiteKey: sitekey }),
+      hcaptcha: (url, sitekey) => ({ type: "HCaptchaTaskProxyless", websiteURL: url, websiteKey: sitekey }),
+      recaptcha: (url, sitekey) => ({ type: "RecaptchaV2TaskProxyless", websiteURL: url, websiteKey: sitekey }),
+    },
+  },
+};
+
+async function antiCaptchaSolve(base, clientKey, task) {
+  const create = await fetch(`${base}/createTask`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      clientKey: CAPSOLVER_KEY,
-      task: { type: "AntiCloudflareTask", websiteURL: url, proxy: capStr },
-    }),
+    body: JSON.stringify({ clientKey, task }),
   }).then((r) => r.json());
-  if (create.errorId) throw new Error(`createTask: ${create.errorDescription}`);
+  if (create.errorId) throw new Error(`createTask: ${create.errorDescription || create.errorCode}`);
   const taskId = create.taskId;
   for (let i = 0; i < 40; i++) {
     await new Promise((r) => setTimeout(r, 3000));
-    const res = await fetch("https://api.capsolver.com/getTaskResult", {
+    const res = await fetch(`${base}/getTaskResult`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ clientKey: CAPSOLVER_KEY, taskId }),
+      body: JSON.stringify({ clientKey, taskId }),
     }).then((r) => r.json());
-    if (res.errorId) throw new Error(`getTaskResult: ${res.errorDescription}`);
-    if (res.status === "ready") return res.solution; // { cookies, userAgent, token, ... }
-  }
-  throw new Error("capsolver timeout");
-}
-
-async function capsolveTurnstile(url, sitekey) {
-  const create = await fetch("https://api.capsolver.com/createTask", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      clientKey: CAPSOLVER_KEY,
-      task: { type: "AntiTurnstileTaskProxyless", websiteURL: url, websiteKey: sitekey },
-    }),
-  }).then((r) => r.json());
-  if (create.errorId) throw new Error(`turnstile createTask: ${create.errorDescription}`);
-  for (let i = 0; i < 40; i++) {
-    await new Promise((r) => setTimeout(r, 3000));
-    const res = await fetch("https://api.capsolver.com/getTaskResult", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ clientKey: CAPSOLVER_KEY, taskId: create.taskId }),
-    }).then((r) => r.json());
-    if (res.errorId) throw new Error(`turnstile getTaskResult: ${res.errorDescription}`);
+    if (res.errorId) throw new Error(`getTaskResult: ${res.errorDescription || res.errorCode}`);
     if (res.status === "ready") return res.solution;
   }
-  throw new Error("turnstile timeout");
+  throw new Error("solver timeout");
+}
+
+function solverOrder(pref) {
+  const live = ["capsolver", "twocaptcha"].filter((p) => SOLVERS[p].key);
+  if (pref && SOLVERS[pref]?.key) return [pref, ...live.filter((p) => p !== pref)];
+  return live;
+}
+
+async function solveToken(vendor, url, sitekey, pref) {
+  if (!sitekey) throw new Error(`no sitekey for ${vendor}`);
+  let lastErr;
+  for (const name of solverOrder(pref)) {
+    const make = SOLVERS[name].task[vendor];
+    if (!make) continue;
+    try {
+      const sol = await antiCaptchaSolve(SOLVERS[name].base, SOLVERS[name].key, make(url, sitekey));
+      const token = sol.token || sol.gRecaptchaResponse;
+      if (token) return { token, provider: name };
+      lastErr = new Error("empty solution");
+    } catch (e) {
+      lastErr = e;
+      console.log(`${name} ${vendor} failed: ${String(e?.message ?? e).split("\n")[0]}`);
+    }
+  }
+  throw new Error(`no token for ${vendor}: ${lastErr ? lastErr.message : "no solver configured"}`);
+}
+
+async function capsolve(url, capStr) {
+  return antiCaptchaSolve(SOLVERS.capsolver.base, CAPSOLVER_KEY, {
+    type: "AntiCloudflareTask",
+    websiteURL: url,
+    proxy: capStr,
+  });
 }
 
 async function clickTurnstile(page) {
@@ -129,7 +194,7 @@ async function injectTurnstileToken(page, token) {
   }, token);
 }
 
-async function solveTurnstile(page, target, html) {
+async function solveTurnstile(page, target, html, pref) {
   let sitekey = (html.match(TURNSTILE_SITEKEY) || [])[1];
   if (!sitekey) return html;
 
@@ -139,8 +204,8 @@ async function solveTurnstile(page, target, html) {
   html = await page.content();
   if (turnstileSolved(html) || !TURNSTILE_SITEKEY.test(html)) return html;
 
-  if (CAPSOLVER_KEY) {
-    const sol = await capsolveTurnstile(target, sitekey).catch((e) => {
+  if (solverOrder(pref).length) {
+    const sol = await solveToken("turnstile", target, sitekey, pref).catch((e) => {
       console.log(`turnstile solve failed: ${String(e?.message ?? e).split("\n")[0]}`);
       return null;
     });
@@ -154,7 +219,24 @@ async function solveTurnstile(page, target, html) {
   return html;
 }
 
-async function render(target, { useProxy, solve }) {
+async function probe(target, useProxy) {
+  const sess = useProxy && hasEvomi ? stickySession() : null;
+  const ctxOpts = { viewport: null, ...(sess ? { proxy: sess.proxy } : {}) };
+  const context = await browser.newContext(ctxOpts);
+  try {
+    const page = await context.newPage();
+    await page.goto(target, { waitUntil: "domcontentloaded", timeout: 30000 });
+    await page.waitForLoadState("networkidle", { timeout: 8000 }).catch(() => {});
+    const html = await page.content();
+    const cookies = (await context.cookies()).map((c) => c.name).join(" ");
+    const title = await page.title().catch(() => "");
+    return { html, cookies, title };
+  } finally {
+    await context.close().catch(() => {});
+  }
+}
+
+async function render(target, { useProxy, solve, solver }) {
   const sess = useProxy && hasEvomi ? stickySession() : null;
   const ctxOpts = { viewport: null, ...(sess ? { proxy: sess.proxy } : {}) };
   let context = await browser.newContext(ctxOpts);
@@ -168,7 +250,7 @@ async function render(target, { useProxy, solve }) {
     let html = await page.content();
 
     if (solve && TURNSTILE_SITEKEY.test(html) && !CHALLENGE.test(html)) {
-      html = await solveTurnstile(page, target, html);
+      html = await solveTurnstile(page, target, html, solver);
     }
 
     if (solve && sess && CAPSOLVER_KEY && CHALLENGE.test(html)) {
@@ -200,10 +282,60 @@ http
   .createServer(async (req, res) => {
     const u = new URL(req.url, "http://x");
     if (u.pathname === "/healthz") {
-      res.writeHead(200).end(JSON.stringify({ ok: true, proxy: hasEvomi, solver: Boolean(CAPSOLVER_KEY) }));
+      res
+        .writeHead(200, { "content-type": "application/json" })
+        .end(JSON.stringify({ ok: true, proxy: hasEvomi, solvers: solverOrder() }));
       return;
     }
     const target = u.searchParams.get("url");
+    if (u.pathname === "/detect" && target) {
+      try {
+        const { html, cookies, title } = await probe(target, u.searchParams.get("proxy") === "1");
+        const captcha = detect(html, cookies);
+        res
+          .writeHead(200, { "content-type": "application/json" })
+          .end(JSON.stringify({ url: target, title, captcha, cookies: cookies.split(" ").filter(Boolean) }));
+      } catch (e) {
+        res.writeHead(502, { "content-type": "application/json" }).end(JSON.stringify({ error: String(e?.message ?? e) }));
+      }
+      return;
+    }
+    if (u.pathname === "/solve" && target) {
+      const tokenVendors = new Set(["turnstile", "hcaptcha", "recaptcha"]);
+      try {
+        const { html, cookies, title } = await probe(target, u.searchParams.get("proxy") === "1");
+        const captcha = detect(html, cookies);
+        if (!captcha || !tokenVendors.has(captcha.vendor)) {
+          res
+            .writeHead(200, { "content-type": "application/json" })
+            .end(
+              JSON.stringify({
+                url: target,
+                title,
+                captcha,
+                solved: false,
+                reason: captcha ? "vendor is not token-solvable here" : "no captcha detected",
+              }),
+            );
+          return;
+        }
+        const r = await solveToken(captcha.vendor, target, captcha.sitekey, u.searchParams.get("solver") || undefined);
+        res.writeHead(200, { "content-type": "application/json" }).end(
+          JSON.stringify({
+            url: target,
+            vendor: captcha.vendor,
+            sitekey: captcha.sitekey,
+            provider: r.provider,
+            solved: true,
+            tokenLength: r.token.length,
+            tokenPreview: r.token.slice(0, 48),
+          }),
+        );
+      } catch (e) {
+        res.writeHead(502, { "content-type": "application/json" }).end(JSON.stringify({ error: String(e?.message ?? e) }));
+      }
+      return;
+    }
     if (u.pathname !== "/fetch" || !target) {
       res.writeHead(404).end();
       return;
@@ -212,12 +344,16 @@ http
       const html = await render(target, {
         useProxy: u.searchParams.get("proxy") === "1",
         solve: u.searchParams.get("solve") === "1",
+        solver: u.searchParams.get("solver") || undefined,
       });
-      res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(html);
+      const hit = detect(html);
+      res
+        .writeHead(200, { "content-type": "text/html; charset=utf-8", "x-captcha": hit ? hit.vendor : "none" })
+        .end(html);
     } catch (e) {
       res.writeHead(502).end(String(e?.message ?? e));
     }
   })
   .listen(9223, "0.0.0.0", () =>
-    console.log(`patchright http on :9223 (proxy ${hasEvomi ? "on" : "off"}, solver ${CAPSOLVER_KEY ? "on" : "off"})`),
+    console.log(`patchright http on :9223 (proxy ${hasEvomi ? "on" : "off"}, solvers [${solverOrder().join(", ") || "none"}])`),
   );

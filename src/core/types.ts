@@ -16,6 +16,7 @@ interface StepResult {
   chars?: number;
   preview?: string;
   via?: string;
+  trail?: string[];
 }
 
 export interface AgentStep {
@@ -25,6 +26,7 @@ export interface AgentStep {
   via?: string;
   resultCount?: number;
   results?: StepResult[];
+  trail?: string[];
   cost?: number;
   cached?: boolean;
 }

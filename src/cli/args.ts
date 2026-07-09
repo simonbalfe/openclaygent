@@ -22,8 +22,9 @@ Options:
   --max-steps <n>         Max agent loop iterations (default: 5).
   --concurrency <n>       Rows to research in parallel (default: 5).
   --json                  Print raw JSON results instead of the table.
-  --verbose               Stream agent steps live with result previews (titles, URLs,
-                          snippets, page sizes). Goes to stderr when --json is set.
+  --verbose               Agent steps always stream live (query, provider used, ladder
+                          trail). This adds result previews (titles, URLs, snippets) to
+                          that live trace. Goes to stderr when --json is set.
   --out <file>            Also write results as JSON to this file.
   --help                  Show this.`;
 

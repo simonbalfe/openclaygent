@@ -103,28 +103,68 @@ interface FetchResult {
   via: string;
   tavilyCredits: number;
   outcome: Outcome;
+  trail: string[];
+}
+
+function unusableReason(text: string, status?: number): string {
+  if (status !== undefined && status === 0) return "fetch error";
+  if (status !== undefined && status !== 200) return `http ${status}`;
+  if (!text) return "empty";
+  if (text.length < MIN_USABLE_CHARS) return `too short (${text.length}c)`;
+  return `bot-wall/shell (${text.length}c)`;
 }
 
 async function fetchLadder(url: string): Promise<FetchResult> {
+  const trail: string[] = [];
+  const patchrightEnabled = Boolean(process.env.PATCHRIGHT_URL);
+
   const local = await impitFetch(url);
-  if (usable(local.text)) return { text: local.text, via: "impit", tavilyCredits: 0, outcome: "ok" };
-  if (isDeadStatus(local.status)) return { text: "", via: "impit", tavilyCredits: 0, outcome: "dead" };
+  if (usable(local.text)) {
+    trail.push(`impit: ok (${local.text.length}c)`);
+    return { text: local.text, via: "impit", tavilyCredits: 0, outcome: "ok", trail };
+  }
+  trail.push(`impit: ${unusableReason(local.text, local.status)}`);
+  if (isDeadStatus(local.status)) return { text: "", via: "impit", tavilyCredits: 0, outcome: "dead", trail };
+
+  if (!patchrightEnabled) trail.push("patchright: skipped (no env)");
 
   const rendered = await patchrightFetch(url);
-  if (usable(rendered)) return { text: rendered, via: "patchright", tavilyCredits: 0, outcome: "ok" };
+  if (patchrightEnabled) {
+    if (usable(rendered)) {
+      trail.push(`patchright: ok (${rendered.length}c)`);
+      return { text: rendered, via: "patchright", tavilyCredits: 0, outcome: "ok", trail };
+    }
+    trail.push(`patchright: ${unusableReason(rendered)}`);
+  }
 
   const proxied = await patchrightFetch(url, { proxy: true });
-  if (usable(proxied)) return { text: proxied, via: "patchright+proxy", tavilyCredits: 0, outcome: "ok" };
+  if (patchrightEnabled) {
+    if (usable(proxied)) {
+      trail.push(`patchright+proxy: ok (${proxied.length}c)`);
+      return { text: proxied, via: "patchright+proxy", tavilyCredits: 0, outcome: "ok", trail };
+    }
+    trail.push(`patchright+proxy: ${unusableReason(proxied)}`);
+  }
 
   const solved = await patchrightFetch(url, { proxy: true, solve: true });
-  if (usable(solved)) return { text: solved, via: "patchright+solver", tavilyCredits: 0, outcome: "ok" };
+  if (patchrightEnabled) {
+    if (usable(solved)) {
+      trail.push(`patchright+solver: ok (${solved.length}c)`);
+      return { text: solved, via: "patchright+solver", tavilyCredits: 0, outcome: "ok", trail };
+    }
+    trail.push(`patchright+solver: ${unusableReason(solved)}`);
+  }
 
   const tav = await tavilyExtractFetch(url);
-  if (usable(tav.text)) return { text: tav.text, via: "tavily", tavilyCredits: tav.credits, outcome: "ok" };
+  if (usable(tav.text)) {
+    trail.push(`tavily: ok (${tav.text.length}c)`);
+    return { text: tav.text, via: "tavily", tavilyCredits: tav.credits, outcome: "ok", trail };
+  }
+  trail.push(`tavily: ${tavilyClient() ? unusableReason(tav.text) : "skipped (no env)"}`);
 
   const best = tav.text || solved || proxied || rendered || local.text;
   const via = tav.text ? "tavily" : rendered ? "patchright" : "impit";
-  return { text: best, via, tavilyCredits: tav.credits, outcome: "transient" };
+  return { text: best, via, tavilyCredits: tav.credits, outcome: "transient", trail };
 }
 
 export function fetchPageTool(sink: Sink, cache: Cache) {
@@ -145,14 +185,14 @@ export function fetchPageTool(sink: Sink, cache: Cache) {
     execute: async ({ urls, query }) => {
       for (const url of urls)
         assertVerifiedUrl(sink, url, "Only fetch URLs from a web_search result, this row's data, or links on a page you already fetched. web_search first.");
-      const raw: { url: string; text: string; via: string; tavilyCredits: number; cached: boolean }[] =
+      const raw: { url: string; text: string; via: string; trail: string[]; tavilyCredits: number; cached: boolean }[] =
         await Promise.all(
         urls.map(async (url: string) => {
           const { value, cached } = await cache.getOrCompute("fetch", normalizeUrl(url), () => fetchLadder(url), {
             cacheable: (r) => r.outcome === "ok" || r.outcome === "dead",
             ttlMs: (r) => (r.outcome === "dead" ? DEAD_TTL_MS : undefined),
           });
-          return { url, text: value.text, via: value.via, tavilyCredits: cached ? 0 : value.tavilyCredits, cached };
+          return { url, text: value.text, via: value.via, trail: value.trail, tavilyCredits: cached ? 0 : value.tavilyCredits, cached };
         }),
       );
       const pages = raw.map((p) => ({ ...p, text: fitToBudget(p.text, query, PAGE_CAP) }));
@@ -168,7 +208,7 @@ export function fetchPageTool(sink: Sink, cache: Cache) {
         type: "fetch",
         urls,
         resultCount: pages.length,
-        results: pages.map((p) => ({ url: p.url, chars: p.text.length, preview: clip(p.text), via: p.via })),
+        results: pages.map((p) => ({ url: p.url, chars: p.text.length, preview: clip(p.text), via: p.via, trail: p.trail })),
         cost: tavilyUsd(tavilyCredits),
         cached: pages.length > 0 && pages.every((p) => p.cached),
       });

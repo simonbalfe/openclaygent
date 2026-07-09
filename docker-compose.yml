@@ -20,6 +20,7 @@ services:
       - EVOMI_PASSWORD=${EVOMI_PASSWORD:-}
       - EVOMI_GATEWAY=${EVOMI_GATEWAY:-}
       - CAPSOLVER_API_KEY=${CAPSOLVER_API_KEY:-}
+      - TWOCAPTCHA_API_KEY=${TWOCAPTCHA_API_KEY:-}
     # Headed Chrome needs user namespaces for its sandbox — Docker's default seccomp blocks them.
     security_opt:
       - seccomp:unconfined
@@ -32,7 +33,12 @@ services:
     ports:
       - "8888:8080"
     volumes:
-      - ./searxng/settings.yml:/etc/searxng/settings.yml:ro
+      - ./searxng/settings.yml:/etc/searxng/settings.template.yml:ro
+      - ./searxng/entrypoint.sh:/searxng-wrapper.sh:ro
     environment:
       - SEARXNG_SECRET=${SEARXNG_SECRET:-openclaygent-local-dev}
+      - EVOMI_USERNAME=${EVOMI_USERNAME:-}
+      - EVOMI_PASSWORD=${EVOMI_PASSWORD:-}
+      - EVOMI_GATEWAY=${EVOMI_GATEWAY:-}
+    entrypoint: ["/bin/sh", "/searxng-wrapper.sh"]
     restart: unless-stopped

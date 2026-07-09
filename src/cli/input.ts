@@ -67,12 +67,10 @@ export function buildOptions(flags: Flags): RunOptions {
     const n = Number(flags.concurrency);
     if (Number.isFinite(n)) opts.concurrency = n;
   }
-  if (flags.verbose) {
-    const emit = flags.json ? console.error : console.log;
-    opts.onStep = (s) =>
-      formatStep(s, true).forEach((line) =>
-        emit(line.startsWith(" ") ? `    ${line}` : `  › ${line}`),
-      );
-  }
+  const emit = flags.json ? console.error : console.log;
+  opts.onStep = (s) =>
+    formatStep(s, Boolean(flags.verbose)).forEach((line) =>
+      emit(line.startsWith(" ") ? `    ${line}` : `  › ${line}`),
+    );
   return opts;
 }

@@ -12,18 +12,21 @@ export function formatStep(s: AgentStep, detailed = false): string[] {
     lines.push(
       `search    "${s.query}"${s.via ? ` [${s.via}]` : ""} → ${s.resultCount} results${s.cached ? " (cached)" : ""}`,
     );
+    if (s.trail?.length) lines.push(`    ladder: ${s.trail.join(" → ")}`);
     details.forEach((r, i) => {
       lines.push(`    ${i + 1}. ${r.title || r.url || ""}`);
       if (r.title && r.url) lines.push(`       ${r.url}`);
       if (r.preview) lines.push(`       "${r.preview}"`);
     });
   } else if (s.type === "fetch") {
+    const all = s.results ?? [];
     (s.urls ?? []).forEach((u, i) => {
-      const d = details[i];
+      const d = all[i];
       const via = d?.via ? ` [${d.via}]` : "";
       const chars = d?.chars !== undefined ? ` → ${d.chars} chars` : "";
       lines.push(`fetch     ${u}${via}${chars}`);
-      if (d?.preview) lines.push(`       "${d.preview}"`);
+      if (d?.trail?.length) lines.push(`    ladder: ${d.trail.join(" → ")}`);
+      if (detailed && d?.preview) lines.push(`       "${d.preview}"`);
     });
   } else if (s.type === "linkedin" || s.type === "crunchbase") {
     lines.push(`${s.type}  ${s.query} → ${s.resultCount} items`);

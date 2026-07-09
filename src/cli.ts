@@ -1,3 +1,4 @@
+#!/usr/bin/env bun
 import { HELP, parseArgs } from "./cli/args.ts";
 import { buildOptions, loadActionSpec, loadRows } from "./cli/input.ts";
 import { money, printRow } from "./cli/render.ts";
@@ -23,7 +24,7 @@ if (flags.json) {
   console.log(JSON.stringify(rows.length === 1 ? results[0] : results, null, 2));
 } else {
   rows.forEach((row, i) =>
-    printRow(Object.values(row)[0]?.toString() ?? `row ${i + 1}`, results[i]!, !flags.verbose),
+    printRow(Object.values(row)[0]?.toString() ?? `row ${i + 1}`, results[i]!, false),
   );
   const totals = results.reduce(
     (acc, r) => ({

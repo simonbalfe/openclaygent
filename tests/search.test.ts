@@ -32,6 +32,7 @@ test("ladder: all rungs empty returns the empty list, no error", async () => {
     via: "searxng",
     exaUsd: 0,
     tavilyCredits: 0,
+    trail: ["searxng: empty", "exa: skipped (no env)", "tavily: skipped (no env)"],
   });
 });
 

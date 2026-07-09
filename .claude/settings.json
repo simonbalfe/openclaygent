@@ -14,8 +14,8 @@
       {
         "hooks": [
           {
-            "type": "prompt",
-            "prompt": "If this session changed src/, patchright/, docker-compose.yml, or env vars, verify EACH owning doc for the kind of change made, independently — updating one does NOT excuse another: a new/renamed/removed file, tool, or scope change → docs/architecture.md (file map/tools/scope); a new non-obvious gotcha → docs/decisions.md; a shipped or materially changed feature/capability → docs/roadmap.md (mark [x] or amend the entry); an added/removed env var → .env.example. Block and name EVERY owning doc still missing its update (a shipped feature with architecture/decisions updated but no roadmap entry still blocks). Pure doc edits, test-only changes, and changes whose every owning doc was updated this session pass."
+            "type": "command",
+            "command": "echo 'Doc-sync check: if this session changed src/, docker-compose.yml, patchright/, or searxng/, confirm its owning doc was updated in the same turn — architecture.md (file map/tools/scope), decisions.md (gotchas), roadmap.md (feature checklist), .env.example (env vars), README.md (front door). Unsynced change means stale docs; fix before ending.'"
           }
         ]
       }

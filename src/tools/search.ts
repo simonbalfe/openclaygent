@@ -78,23 +78,37 @@ const SEARCH_LADDER: SearchRung[] = [
   { name: "tavily", enabled: () => Boolean(process.env.TAVILY_API_KEY), search: tavilySearch },
 ];
 
+function clipReason(e: unknown): string {
+  const msg = e instanceof Error ? e.message : String(e);
+  return msg.length > 80 ? `${msg.slice(0, 80)}…` : msg;
+}
+
 export async function searchWeb(
   query: string,
   n: number,
-): Promise<{ results: SearchResult[]; via: string; exaUsd: number; tavilyCredits: number }> {
+): Promise<{ results: SearchResult[]; via: string; exaUsd: number; tavilyCredits: number; trail: string[] }> {
+  const trail: string[] = [];
   let lastError: unknown;
   let emptyVia: string | undefined;
   for (const rung of SEARCH_LADDER) {
-    if (!rung.enabled()) continue;
+    if (!rung.enabled()) {
+      trail.push(`${rung.name}: skipped (no env)`);
+      continue;
+    }
     try {
       const { results, exaUsd, tavilyCredits } = await rung.search(query, n);
-      if (results.length) return { results, via: rung.name, exaUsd, tavilyCredits };
+      if (results.length) {
+        trail.push(`${rung.name}: ${results.length} results`);
+        return { results, via: rung.name, exaUsd, tavilyCredits, trail };
+      }
+      trail.push(`${rung.name}: empty`);
       emptyVia = rung.name;
     } catch (e) {
+      trail.push(`${rung.name}: error ${clipReason(e)}`);
       lastError = e;
     }
   }
-  if (emptyVia) return { results: [], via: emptyVia, exaUsd: 0, tavilyCredits: 0 };
+  if (emptyVia) return { results: [], via: emptyVia, exaUsd: 0, tavilyCredits: 0, trail };
   throw lastError instanceof Error
     ? lastError
     : new Error("No search provider configured: set SEARXNG_URL, EXA_API_KEY, or TAVILY_API_KEY");
@@ -121,7 +135,7 @@ export function webSearchTool(sink: Sink, cache: Cache) {
         () => searchWeb(query, max_results),
         { cacheable: (r) => r.results.length > 0 },
       );
-      const { results, via, exaUsd, tavilyCredits } = value;
+      const { results, via, exaUsd, tavilyCredits, trail } = value;
       for (const r of results) {
         sink.sources.add(r.url);
         noteUrl(sink, r.url);
@@ -134,6 +148,7 @@ export function webSearchTool(sink: Sink, cache: Cache) {
         type: "search",
         query,
         via,
+        trail,
         resultCount: results.length,
         results: results.map((r) => ({ title: r.title, url: r.url, preview: clip(r.content) })),
         cost: cached ? 0 : exaUsd + tavilyUsd(tavilyCredits),

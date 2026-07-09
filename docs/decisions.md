@@ -274,7 +274,50 @@ ladder escalates when a rung throws **or returns zero results** — so a SearXNG
 an empty result page silently falls through to the paid backups rather than starving the
 agent. If every rung came back empty the empty list is returned (informative to the
 model); only when every rung *threw* does the tool error. The step log records the
-winning rung as `via: searxng | exa | tavily`.
+winning rung as `via: searxng | exa | tavily`, plus a `trail` of every rung tried with
+the reason it escalated (`searxng: empty`, `exa: error …`), so the waterfall is visible.
+
+**SearXNG routes its outgoing engine scrapes through the Evomi residential proxy.** Without
+it, Google/DDG/Brave/Startpage CAPTCHA-block the datacenter IP and most queries (especially
+operator-heavy `site:`/quoted/`OR` ones) return zero results — so the free rung silently
+falls through to paid Exa on nearly every call. Three gotchas made this non-trivial:
+- **SearXNG ignores `HTTP_PROXY`/`HTTPS_PROXY` env vars.** Its `searx/network/client.py`
+  builds httpx transports with an explicit `proxy=`, bypassing httpx's env/mounts resolution.
+  The proxy has to live in `outgoing.proxies.all://` in `settings.yml`.
+- **`settings.yml` does not interpolate `${ENV}`**, and the Evomi password must not be
+  committed. So `searxng/settings.yml` is a secret-free template; `searxng/entrypoint.sh`
+  (wired as the container `entrypoint`) appends the `proxies` block from `EVOMI_*` env at
+  start, then `exec`s the stock `/usr/local/searxng/entrypoint.sh`.
+- **`outgoing.extra_proxy_timeout` must be an int** (`10`, not `10.0`) or SearXNG rejects the
+  whole settings file as invalid and crash-loops.
+
+Google needs two more settings on top of the proxy, because a rotating residential proxy
+means any single request can land on a Google-flagged IP:
+- **`search.suspended_times.SearxEngineCaptcha: 0`** (also `SearxEngineTooManyRequests` /
+  `SearxEngineAccessDenied`). The default is 3600s — one CAPTCHA suspends the whole Google
+  engine for an hour, so every later query shows `google: Suspended: CAPTCHA` even though the
+  next proxy IP would have worked. `0` disables the suspension.
+- **`outgoing.retries: 2`** — a CAPTCHA'd engine request is retried on a fresh proxy IP
+  *within the same query*, so Google succeeds as soon as a request hits a clean residential IP.
+The Google engine code itself (user-agent / consent handling) is a moving target SearXNG
+patches in newer images, so stay current on `searxng/searxng:latest`.
+Result: previously-zero operator queries now return ~27 results, and Google returns ~9–10
+per query with no suspensions.
+
+**Rejected: chasing zero-CAPTCHA self-hosted Google.** Two avenues were tested on the live
+Evomi residential pool and both fail. (1) SearXNG `outgoing.pool_maxsize: 0` (force a fresh
+connection — hence a fresh rotating IP — per engine request) cut Google CAPTCHAs from ~99%
+to ~28% of a 100-request burst but at 4× latency plus timeouts, and never reached zero.
+(2) A self-hosted browser SERP scraper (`third_party/openserp`, go-rod + full fingerprint
+stealth: `navigator.webdriver`/WebGL/plugins/`chrome.runtime` patches, unique Evomi session
+IP per term) CAPTCHA'd **every** headless request — *worse* than its restrained default,
+because Google fingerprints the spoofing JS itself (openserp deliberately strips those
+patches for Google for exactly this reason). The wall is structural: any self-hosted scraper
+fed rotating residential IPs loses to Google's server-side detection regardless of stealth
+tier. Zero-CAPTCHA Google is a managed-API outcome (Serper/SerpAPI run mobile/ISP pools +
+continuously-retuned evasion + server-side solving) or needs an in-loop solver — not a
+proxy-tuning or stealth-patch outcome. So the ladder stays SearXNG → Exa → Tavily and adds
+no self-hosted Google rung.
 
 Exa sits above Tavily because its `/search` returns page text **inline** via `contents` —
 for indexable public pages the search step often already carries the answer. Search
@@ -361,7 +404,9 @@ self-hosted rungs:
 HTTP rather than Playwright's websocket protocol because Bun's ws client hangs against
 Playwright's server (Node connects fine); the HTTP seam also keeps `patchright` out of
 this package entirely. Each rung auto-skips when its env is unset (`PATCHRIGHT_URL`, `EVOMI_*`).
-Step log records the winning rung as `via: impit | patchright | patchright+proxy`.
+Step log records the winning rung as `via: impit | patchright | patchright+proxy`, plus a
+per-URL `trail` naming each rung tried and why it escalated (`impit: bot-wall/shell (812c)`,
+`patchright: empty`), so an early jump to Tavily is explainable rather than silent.
 
 A fourth rung, `&solve=1`, handles the two challenge shapes separately, free-first:
 
@@ -465,8 +510,8 @@ Originally there were none — at the initial size there was no drift pressure. 
 until the fetch-ladder rewrite and the fourth LinkedIn tool both landed without their doc
 updates (caught by the 2026-06 codebase audit). `.claude/settings.json` now carries the
 minimal scriptless pair: a SessionStart pointer naming which doc owns which fact, and a
-Stop prompt hook that flags a `src/`, compose, or `patchright/` change landing without its
-owning doc. No hook scripts to maintain. Escalate to a real pre-commit diff check only if
+Stop prompt hook that flags a `src/`, compose, `patchright/`, or `searxng/` change landing
+without its owning doc. No hook scripts to maintain. Escalate to a real pre-commit diff check only if
 drift survives the nudge.
 
 ## Large pages: BM25 relevance, not a bigger cap
