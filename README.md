@@ -62,9 +62,15 @@ LLM, Exa, Apify, and Tavily.
 
 ## Setup
 
-One command does everything — installs Bun if you don't have it, installs deps, creates `.env`,
-asks only for the keys that matter, then brings up the **free search + fetch stack _and_ the API
-server**:
+From nothing to running in one line — clones the repo, installs Bun if you don't have it,
+installs deps, creates `.env`, asks only for the keys that matter, then brings up the **free
+search + fetch stack _and_ the API server**:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/simonbalfe/openclaygent/main/install.sh | bash
+```
+
+Already cloned? Just run the setup step directly:
 
 ```bash
 ./setup.sh
