@@ -112,12 +112,13 @@ unset key is a skipped rung, never an error.
 
 ## Use it: CLI
 
-The CLI is the quickest way in. With `--json` it prints a clean result to stdout (warnings go
-to stderr), so it pipes straight into whatever you're building — a shell script, a cron job,
-or an agent that shells out for a typed, cited answer instead of researching inline.
+The CLI is the quickest way in. Setup links it globally, so `openclaygent` works from any
+directory (equivalent to `bun run cli --` inside the repo). With `--json` it prints a clean
+result to stdout (warnings go to stderr), so it pipes straight into whatever you're building —
+a shell script, a cron job, or an agent that shells out for a typed, cited answer.
 
 ```bash
-bun run cli -- --json \
+openclaygent --json \
   --instructions "Does this company offer a free trial? Check their pricing page." \
   --template "Company: {{company}}" \
   --schema '{"free_trial":"boolean","evidence_url":"string?"}' \
@@ -145,6 +146,17 @@ curl -s localhost:8080/run -H 'content-type: application/json' -d '{
 ```
 
 See `docs/architecture.md` (HTTP API) for the full request/response shape.
+
+## Uninstall
+
+One command removes everything — containers, images, the global `openclaygent` link, and the
+install directory (your `~/.zshrc` keys are left alone):
+
+```bash
+~/openclaygent/uninstall.sh          # or: curl -fsSL <raw>/uninstall.sh | bash
+```
+
+It asks to confirm; pass `-y` (or `OPENCLAYGENT_YES=1`) to skip the prompt.
 
 ## Docs
 

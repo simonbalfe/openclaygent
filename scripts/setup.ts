@@ -122,6 +122,13 @@ function main(): void {
     process.exit(1);
   }
 
+  console.log("\nLinking the openclaygent CLI globally (bun link)...");
+  if (run(["bun", "link"]) === 0) {
+    console.log("  openclaygent is now available from any directory.");
+  } else {
+    console.log("  bun link failed - use `bun run cli` from this directory instead.");
+  }
+
   if (!existsSync(ENV)) {
     copyFileSync(ENV_EXAMPLE, ENV);
     console.log("\nCreated .env from .env.example.");
@@ -165,10 +172,10 @@ function main(): void {
   console.log("\nDone.");
   if (stackUp) {
     console.log("  API is live:  http://localhost:8080/docs   (POST http://localhost:8080/run)");
-    console.log("  CLI:          bun run cli -- --help");
+    console.log("  CLI:          openclaygent --help");
   } else {
     console.log("  Start it all:  docker compose up -d       # free stack + API on :8080");
-    console.log("  CLI:           bun run cli -- --help");
+    console.log("  CLI:           openclaygent --help        # (or `bun run cli` in this dir)");
     console.log("  API only:      bun run api                # http://localhost:8080/docs");
   }
 }

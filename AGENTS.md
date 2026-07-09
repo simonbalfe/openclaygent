@@ -10,7 +10,8 @@ its env is unset) — mechanism and rung order in `docs/architecture.md` (The to
 
 - `curl -fsSL <raw>/install.sh | bash` — the from-nothing entry (`install.sh`): clones the repo to `$HOME/openclaygent` (override `OPENCLAYGENT_DIR`/`OPENCLAYGENT_REPO`), then execs `setup.sh` with stdin bound to `/dev/tty` so the key prompts work even under `curl | bash`.
 - `./setup.sh` — the one-click entry once cloned (`setup.sh` → `scripts/setup.ts`): installs Bun if missing, then `bun install`, creates `.env`, prompts for keys (OpenRouter required; Exa/Tavily/Apify optional), and offers `docker compose up -d` which now brings up the free stack **and** the API. The service URLs are auto-defaulted in code, never prompted. (`bun run setup` skips the Bun-install step if you already have Bun.)
-- `bun run cli -- --help` — the CLI entry (`src/cli.ts`); see `docs/architecture.md` (CLI).
+- `bun run cli -- --help` — the CLI entry (`src/cli.ts`); see `docs/architecture.md` (CLI). Setup runs `bun link`, so a global `openclaygent` command (package.json `bin`) also points at the install dir.
+- `./uninstall.sh` — clean wipe (`uninstall.sh`, confirm-gated, `-y`/`OPENCLAYGENT_YES=1` to skip): `docker compose down -v`, removes the api/patchright/searxng images, `bun unlink` + drops the global `openclaygent` bin, deletes `$HOME/openclaygent` (override `OPENCLAYGENT_DIR`). Leaves `~/.zshrc` keys untouched.
 - `bun run api` — the HTTP entry (`src/api.ts`, Hono + OpenAPI): `POST /run`, `/docs`, `/openapi.json`, `/health` on `PORT` (default 8080). Both entries share `core/action.ts` + `runTable` — never duplicate run logic into either. See `docs/architecture.md` (HTTP API).
 - `bun test` — the test suite (`tests/`); the live test is skipped unless `RUN_LIVE=1`.
 - `bun run typecheck` — `tsc --noEmit`.
