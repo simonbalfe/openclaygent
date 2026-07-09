@@ -3,45 +3,45 @@ set -euo pipefail
 
 DIR="${OPENCLAYGENT_DIR:-$HOME/openclaygent}"
 
-echo "This will remove openclaygent from your system:"
-echo "  - stop and delete its Docker containers, network, and volumes"
-echo "  - remove its Docker images (api, patchright, searxng base)"
-echo "  - remove the global 'openclaygent' CLI link"
-echo "  - delete the install directory ${DIR}"
-echo "Your API keys in ~/.zshrc are NOT touched."
-echo
+is_ours() {
+  [ -f "${1}/package.json" ] && grep -q '"name"[[:space:]]*:[[:space:]]*"openclaygent"' "${1}/package.json" 2>/dev/null
+}
 
 if [ "${OPENCLAYGENT_YES:-}" != "1" ] && [ "${1:-}" != "-y" ]; then
   if [ -e /dev/tty ]; then
-    printf "Proceed? [y/N] "
+    printf "Remove openclaygent (containers, images, CLI link, %s)? ~/.zshrc keys are kept. [y/N] " "${DIR}"
     read -r reply < /dev/tty
-    case "${reply}" in y | Y | yes | YES) ;; *) echo "Aborted."; exit 0 ;; esac
+    case "${reply}" in y | Y | yes | YES) ;; *) exit 0 ;; esac
   else
-    echo "Non-interactive shell. Re-run with -y (or OPENCLAYGENT_YES=1) to confirm."
+    echo "Non-interactive: re-run with -y (or OPENCLAYGENT_YES=1) to confirm." >&2
     exit 1
   fi
 fi
 
 if command -v docker >/dev/null 2>&1; then
-  if [ -f "${DIR}/docker-compose.yml" ]; then
-    echo "Stopping stack..."
-    (cd "${DIR}" && docker compose down -v --remove-orphans) || true
-  fi
-  echo "Removing images..."
+  [ -f "${DIR}/docker-compose.yml" ] && (cd "${DIR}" && docker compose down -v --remove-orphans >/dev/null 2>&1) || true
   docker rmi -f openclaygent-api openclaygent-patchright >/dev/null 2>&1 || true
-  patchright_imgs="$(docker images -q ghcr.io/simonbalfe/openclaygent-patchright 2>/dev/null | sort -u)"
-  [ -n "${patchright_imgs}" ] && docker rmi -f ${patchright_imgs} >/dev/null 2>&1 || true
-  docker rmi -f searxng/searxng:latest >/dev/null 2>&1 || true
+  imgs="$(docker images -q ghcr.io/simonbalfe/openclaygent-patchright 2>/dev/null | sort -u)"
+  [ -n "${imgs}" ] && docker rmi -f ${imgs} >/dev/null 2>&1 || true
 fi
 
-if command -v bun >/dev/null 2>&1 && [ -d "${DIR}" ]; then
+if command -v bun >/dev/null 2>&1 && is_ours "${DIR}"; then
   (cd "${DIR}" && bun unlink >/dev/null 2>&1) || true
 fi
-rm -f "$HOME/.bun/bin/openclaygent" >/dev/null 2>&1 || true
-
-if [ -d "${DIR}" ]; then
-  echo "Removing ${DIR}..."
-  rm -rf "${DIR}"
+LINK="$HOME/.bun/bin/openclaygent"
+if [ -L "${LINK}" ]; then
+  case "$(readlink "${LINK}")" in *openclaygent*) rm -f "${LINK}" ;; esac
 fi
 
-echo "openclaygent removed. Your API keys in ~/.zshrc were left untouched."
+if [ -d "${DIR}" ]; then
+  resolved="$(cd "${DIR}" && pwd -P)"
+  if [ -z "${resolved}" ] || [ "${resolved}" = "/" ] || [ "${resolved}" = "${HOME}" ]; then
+    echo "Skipped ${DIR}: unsafe path, remove manually." >&2
+  elif ! is_ours "${DIR}"; then
+    echo "Skipped ${DIR}: not an openclaygent checkout." >&2
+  else
+    rm -rf "${DIR}"
+  fi
+fi
+
+echo "openclaygent removed."
