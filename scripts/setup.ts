@@ -129,34 +129,38 @@ function main(): void {
     console.log("  bun link failed - use `bun run cli` from this directory instead.");
   }
 
-  if (!existsSync(ENV)) {
-    copyFileSync(ENV_EXAMPLE, ENV);
-    console.log("\nCreated .env from .env.example.");
-  }
+  if (!existsSync(ENV)) copyFileSync(ENV_EXAMPLE, ENV);
 
-  if (!process.stdin.isTTY) {
-    console.log("\nNon-interactive shell — skipping key prompts. Edit .env by hand.");
-    process.exit(0);
-  }
-
-  console.log("\nEnter your keys. The service URLs (SearXNG, patchright) are automatic — nothing to set.");
   const current = readEnv();
   const updates = new Map<string, string>();
+  const toPrompt: KeySpec[] = [];
+  let reused = 0;
   for (const spec of KEYS) {
-    const value = ask(spec, current.get(spec.name) ?? "");
-    if (value !== "" && value !== current.get(spec.name)) updates.set(spec.name, value);
+    const inFile = current.get(spec.name) ?? "";
+    if (inFile && !looksPlaceholder(inFile)) continue;
+    const inShell = process.env[spec.name] ?? "";
+    if (inShell && !looksPlaceholder(inShell)) {
+      updates.set(spec.name, inShell);
+      reused++;
+    } else {
+      toPrompt.push(spec);
+    }
+  }
+  if (reused > 0) console.log(`\nReused ${reused} key(s) already in your environment.`);
+
+  if (process.stdin.isTTY) {
+    for (const spec of toPrompt) {
+      const value = ask(spec, "");
+      if (value !== "") updates.set(spec.name, value);
+    }
   }
 
-  const openrouter = updates.get("OPENROUTER_API_KEY") ?? current.get("OPENROUTER_API_KEY") ?? "";
+  if (updates.size > 0) upsertEnv(updates);
+
+  const openrouter =
+    updates.get("OPENROUTER_API_KEY") ?? process.env.OPENROUTER_API_KEY ?? current.get("OPENROUTER_API_KEY") ?? "";
   if (looksPlaceholder(openrouter)) {
-    console.log("\nWarning: OPENROUTER_API_KEY is still unset. Runs will fail until you add it to .env.");
-  }
-
-  if (updates.size > 0) {
-    upsertEnv(updates);
-    console.log(`\nSaved ${updates.size} key(s) to .env.`);
-  } else {
-    console.log("\nNo key changes.");
+    console.log("\nOPENROUTER_API_KEY is not set - add it to .env before running.");
   }
 
   let stackUp = false;
