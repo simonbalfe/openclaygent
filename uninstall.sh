@@ -29,7 +29,8 @@ if command -v docker >/dev/null 2>&1; then
   fi
   echo "Removing images..."
   docker rmi -f openclaygent-api openclaygent-patchright >/dev/null 2>&1 || true
-  docker rmi -f ghcr.io/simonbalfe/openclaygent-patchright:latest >/dev/null 2>&1 || true
+  patchright_imgs="$(docker images -q ghcr.io/simonbalfe/openclaygent-patchright 2>/dev/null | sort -u)"
+  [ -n "${patchright_imgs}" ] && docker rmi -f ${patchright_imgs} >/dev/null 2>&1 || true
   docker rmi -f searxng/searxng:latest >/dev/null 2>&1 || true
 fi
 
