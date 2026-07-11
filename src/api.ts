@@ -21,6 +21,10 @@ const RunRequest = z
     model: z.string().optional(),
     maxSteps: z.number().int().positive().optional(),
     concurrency: z.number().int().positive().optional(),
+    fast: z
+      .boolean()
+      .optional()
+      .openapi({ description: "Skip the slow anti-bot fetch rungs (proxy, solver) to cap page latency." }),
     require: z.string().optional().openapi({ description: "Skip any row missing this field." }),
   })
   .openapi("RunRequest");
@@ -78,6 +82,7 @@ app.openapi(runRoute, async (c) => {
   if (body.model) opts.model = body.model;
   if (body.maxSteps) opts.maxSteps = body.maxSteps;
   if (body.concurrency) opts.concurrency = body.concurrency;
+  if (body.fast) opts.fast = true;
   const results = await runTable(action, rows, opts);
   return c.json({ results }, 200);
 });

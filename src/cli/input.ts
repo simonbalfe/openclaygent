@@ -67,6 +67,7 @@ export function buildOptions(flags: Flags): RunOptions {
     const n = Number(flags.concurrency);
     if (Number.isFinite(n)) opts.concurrency = n;
   }
+  if (flags.fast) opts.fast = true;
   const emit = flags.json ? console.error : console.log;
   opts.onStep = (s) =>
     formatStep(s, Boolean(flags.verbose)).forEach((line) =>

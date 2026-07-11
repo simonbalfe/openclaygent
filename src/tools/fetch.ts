@@ -129,6 +129,7 @@ interface FetchRung {
   name: string;
   enabled: () => boolean;
   run: (url: string) => Promise<{ text: string; status?: number; credits?: number }>;
+  heavy?: boolean;
 }
 
 const patchrightEnabled = () => patchrightBase() !== "";
@@ -136,16 +137,20 @@ const patchrightEnabled = () => patchrightBase() !== "";
 const FETCH_LADDER: FetchRung[] = [
   { name: "impit", enabled: () => true, run: impitFetch },
   { name: "patchright", enabled: patchrightEnabled, run: (url) => patchrightFetch(url) },
-  { name: "patchright+proxy", enabled: patchrightEnabled, run: (url) => patchrightFetch(url, { proxy: true }) },
-  { name: "patchright+solver", enabled: patchrightEnabled, run: (url) => patchrightFetch(url, { proxy: true, solve: true }) },
+  { name: "patchright+proxy", enabled: patchrightEnabled, run: (url) => patchrightFetch(url, { proxy: true }), heavy: true },
+  { name: "patchright+solver", enabled: patchrightEnabled, run: (url) => patchrightFetch(url, { proxy: true, solve: true }), heavy: true },
   { name: "tavily", enabled: () => Boolean(tavilyClient()), run: tavilyExtractFetch },
 ];
 
-async function fetchLadder(url: string): Promise<FetchResult> {
+async function fetchLadder(url: string, fast: boolean): Promise<FetchResult> {
   const trail: string[] = [];
   const best = { text: "", via: "impit" };
   let tavilyCredits = 0;
   for (const rung of FETCH_LADDER) {
+    if (rung.heavy && fast) {
+      trail.push(`${rung.name}: skipped (fast mode)`);
+      continue;
+    }
     if (!rung.enabled()) {
       trail.push(`${rung.name}: skipped (no env)`);
       continue;
@@ -172,7 +177,7 @@ async function fetchLadder(url: string): Promise<FetchResult> {
   return { ...best, tavilyCredits, outcome: "transient", trail };
 }
 
-export function fetchPageTool(sink: Sink, cache: Cache) {
+export function fetchPageTool(sink: Sink, cache: Cache, fast = false) {
   return createTool({
     id: "fetch_page",
     description:
@@ -193,7 +198,7 @@ export function fetchPageTool(sink: Sink, cache: Cache) {
       const raw: { url: string; text: string; via: string; trail: string[]; tavilyCredits: number; cached: boolean }[] =
         await Promise.all(
         urls.map(async (url: string) => {
-          const { value, cached } = await cache.getOrCompute("fetch", normalizeUrl(url), () => fetchLadder(url), {
+          const { value, cached } = await cache.getOrCompute("fetch", normalizeUrl(url), () => fetchLadder(url, fast), {
             cacheable: (r) => r.outcome === "ok" || r.outcome === "dead",
             ttlMs: (r) => (r.outcome === "dead" ? DEAD_TTL_MS : undefined),
           });

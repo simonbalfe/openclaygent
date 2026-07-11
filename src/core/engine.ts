@@ -12,6 +12,7 @@ export interface RunOptions {
   maxSteps?: number;
   maxOutputTokens?: number;
   concurrency?: number;
+  fast?: boolean;
   onStep?: (step: AgentStep) => void;
 }
 
@@ -151,7 +152,7 @@ export async function run<S extends z.ZodType>(
   const sink: Sink = { sources: new Set(), seen: new Set(), log: [], onStep: opts.onStep, cost: emptyCost() };
   seedRowUrls(sink, row);
 
-  const { agent, provider } = buildAgent(sink, model, cache);
+  const { agent, provider } = buildAgent(sink, model, cache, opts.fast ?? false);
   const structuredOutput = { schema: action.output, model: provider.chat(model), errorStrategy: "warn" as const };
   const maxOutputTokens = opts.maxOutputTokens ?? DEFAULT_MAX_TOKENS;
 

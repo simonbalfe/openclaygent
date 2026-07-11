@@ -140,8 +140,7 @@ chars. It only fires over-cap; small pages pass through whole; with no query it 
 head-truncation. See decisions.md (Large pages).
 
 Cheapest-first: the agent is told to prefer search snippets and only fetch when it needs a
-specific page's full text. Full verbatim examples of what `fetch_page` returns live in
-`docs/examples/` (two `fetch_page` capture pages and a long agent-flow case study, captured live).
+specific page's full text.
 
 Every tool that opens a URL (`fetch_page`, the `linkedin_*` tools, `crunchbase_company`)
 refuses URLs the model invented: a URL must have come from a `web_search` result, this row's
@@ -230,7 +229,8 @@ detects which (a real JSON Schema has `type:"object"`/`properties`) and routes a
 either way the engine receives a Zod schema. `--json` prints raw JSON; `--out <file>` writes
 results to disk; `--model <id>` overrides the model per run; `--max-steps <n>` caps the agent
 loop iterations (default 5); `--concurrency <n>` sets how many rows run in parallel
-(default 5, wired as `RunOptions.concurrency`). Agent steps **always stream live** as they
+(default 5, wired as `RunOptions.concurrency`); `--fast` skips the heavy fetch rungs
+(proxy, solver) to cap page latency (wired as `RunOptions.fast`). Agent steps **always stream live** as they
 happen — query, provider used (`via`), and the ladder `trail` with escalation reasons (wired
 as `RunOptions.onStep`, fired by the same `record()` that appends to `agentLog`; goes to
 stderr under `--json` so stdout stays pipeable). `--verbose` adds result previews to that
@@ -252,7 +252,7 @@ Routes:
 
 - `POST /run` — body is an `ActionSpec` (`instructions` · `template` · `schema`) plus rows
   (`rows` for a batch, or `input` for one) and options (`model`, `maxSteps`, `concurrency`,
-  `require`). Returns `{ results: RunResult[] }` — one element per row.
+  `fast`, `require`). Returns `{ results: RunResult[] }` — one element per row.
 - `GET /openapi.json` — the generated OpenAPI 3 document.
 - `GET /docs` — Scalar API reference over that document (same renderer as creatorcrawl).
 - `GET /health` — liveness check.

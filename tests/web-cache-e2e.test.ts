@@ -35,8 +35,8 @@ function htmlDoc(): string {
   return `<!doctype html><html><head><title>About Acme</title></head><body><article><h1>About Acme</h1><p>${para}</p></article></body></html>`;
 }
 
-const callFetch = (sink: Sink, cache: Cache): FetchExec =>
-  fetchPageTool(sink, cache).execute as unknown as FetchExec;
+const callFetch = (sink: Sink, cache: Cache, fast = false): FetchExec =>
+  fetchPageTool(sink, cache, fast).execute as unknown as FetchExec;
 
 const realImpitFetch = (impit as unknown as ImpitLike).fetch;
 const realFetch = globalThis.fetch;
@@ -108,6 +108,28 @@ test("a 404 short-circuits the ladder (no patchright) and is negative-cached in 
   expect(patchrightCalls).toBe(0);
   expect(out.pages[0]!.text).toBe("");
   expect(sets).toEqual([{ ns: "fetch", key: "acme.test/gone", ttl: DEAD_TTL_MS }]);
+});
+
+test("fast mode skips the proxy and solver rungs", async () => {
+  const patchrightUrls: string[] = [];
+  impitHandler = async () => new Response("tiny", { headers: { "content-type": "text/html" } });
+  globalThis.fetch = (async (input: Parameters<typeof fetch>[0]) => {
+    patchrightUrls.push(String(input));
+    return new Response("nope");
+  }) as unknown as typeof fetch;
+
+  const cache = createCache();
+  const url = "https://acme.test/hard";
+  const row = makeSink();
+  noteUrl(row, url);
+
+  await callFetch(row, cache, true)({ urls: [url] });
+
+  expect(patchrightUrls.length).toBe(1);
+  expect(patchrightUrls.some((u) => u.includes("proxy=1"))).toBe(false);
+  const trail = (row.log[0]?.results?.[0]?.trail ?? []).join(" · ");
+  expect(trail).toContain("patchright+proxy: skipped (fast mode)");
+  expect(trail).toContain("patchright+solver: skipped (fast mode)");
 });
 
 test("a transient failure (impit throws, ladder yields nothing) is NOT written to L2", async () => {
