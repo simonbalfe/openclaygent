@@ -32,6 +32,7 @@ const RunRequest = z
 const RunResultSchema = z
   .object({
     result: z.unknown(),
+    reasoning: z.string().nullable(),
     sources: z.array(z.string()),
     agentLog: z.array(z.unknown()),
     tokens: z.object({ input: z.number(), output: z.number() }),

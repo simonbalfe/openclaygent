@@ -22,7 +22,7 @@ const results = await runTable(action, rows, buildOptions(flags));
 
 if (flags.json) {
   console.log(JSON.stringify(rows.length === 1 ? results[0] : results, null, 2));
-} else {
+} else if (flags.pretty) {
   rows.forEach((row, i) =>
     printRow(Object.values(row)[0]?.toString() ?? `row ${i + 1}`, results[i]!, false),
   );
@@ -37,6 +37,12 @@ if (flags.json) {
   console.log(
     `\n${rows.length} rows · ${money(totals.cost)} · ${totals.input} in / ${totals.output} out tok · ${results[0]?.model}`,
   );
+} else {
+  results.forEach((r, i) => {
+    if (r.error) console.error(`row ${i + 1} error: ${r.error}`);
+  });
+  const out = results.map((r) => ({ result: r.result, reasoning: r.reasoning, sources: r.sources }));
+  console.log(JSON.stringify(rows.length === 1 ? out[0] : out, null, 2));
 }
 
 if (typeof flags.out === "string") {

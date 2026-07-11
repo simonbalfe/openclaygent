@@ -71,4 +71,5 @@ export function printRow(label: string, r: RunResult<z.ZodType>, showSteps: bool
   const width = Math.max(0, ...fields.map(([k]) => k.length));
   for (const [k, v] of fields)
     console.log(`  ${k.padEnd(width)}  ${typeof v === "string" ? v : JSON.stringify(v)}`);
+  if (r.reasoning) console.log(`  » ${r.reasoning}`);
 }

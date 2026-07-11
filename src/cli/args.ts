@@ -23,12 +23,17 @@ Options:
   --concurrency <n>       Rows to research in parallel (default: 5).
   --fast                  Fetch never escalates to the slow anti-bot rungs (proxy, solver) —
                           caps worst-case page latency; hard-walled pages come back empty.
-  --json                  Print raw JSON results instead of the table.
-  --verbose               Agent steps always stream live (query, provider used, ladder
-                          trail). This adds result previews (titles, URLs, snippets) to
-                          that live trace. Goes to stderr when --json is set.
-  --out <file>            Also write results as JSON to this file.
-  --help                  Show this.`;
+  --json                  Print the full RunResult envelope (sources, agentLog, cost,
+                          tokens) instead of just the result.
+  --pretty                Human-readable per-row view with cost/token stats.
+  --verbose               Adds result previews (titles, URLs, snippets) to the live step
+                          trace. The trace always streams to stderr.
+  --out <file>            Also write the full results as JSON to this file.
+  --help                  Show this.
+
+By default stdout carries the answer: { result, reasoning, sources } — the schema-shaped
+result, a one-line why, and the URLs behind it (an array for --rows). Steps, cost, and
+tokens are there when you ask (--json).`;
 
 export type Flags = Record<string, string | boolean>;
 

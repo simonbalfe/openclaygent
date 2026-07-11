@@ -1,4 +1,4 @@
-import type { z } from "zod";
+import { z } from "zod";
 import { buildAgent, buildFinalizer, DEFAULT_MODEL } from "./agent.ts";
 import type { Cache } from "./cache.ts";
 import { createCacheFromEnv } from "./cache-pg.ts";
@@ -20,24 +20,36 @@ const DEFAULT_MAX_STEPS = 5;
 const DEFAULT_MAX_TOKENS = 1500;
 const FINALIZE_MAX_TOKENS = 4000;
 
-type Generated<S extends z.ZodType> = {
-  object?: z.infer<S>;
-  usage?: { inputTokens?: number; outputTokens?: number };
-};
+interface Structured<S extends z.ZodType> {
+  answer: z.infer<S>;
+  reasoning?: string;
+}
 
 interface PassResult<S extends z.ZodType> {
-  object: z.infer<S> | null;
+  object: Structured<S> | null;
   inputTokens: number;
   outputTokens: number;
 }
 
 function tally<S extends z.ZodType>(res: unknown): PassResult<S> {
-  const { object, usage } = res as Generated<S>;
+  const { object, usage } = res as {
+    object?: Structured<S>;
+    usage?: { inputTokens?: number; outputTokens?: number };
+  };
   return {
     object: object ?? null,
     inputTokens: usage?.inputTokens ?? 0,
     outputTokens: usage?.outputTokens ?? 0,
   };
+}
+
+function structuredSchema<S extends z.ZodType>(output: S) {
+  return z.object({
+    answer: output,
+    reasoning: z
+      .string()
+      .describe("One or two sentences: which sources settled the answer and how. Cite the deciding URL(s)."),
+  });
 }
 
 function serializeFindings(log: AgentStep[]): string {
@@ -112,6 +124,7 @@ const ZERO_COST: RunCost = {
 function skippedResult<S extends z.ZodType>(model: string): RunResult<S> {
   return {
     result: null,
+    reasoning: null,
     sources: [],
     agentLog: [],
     tokens: { input: 0, output: 0 },
@@ -129,6 +142,7 @@ function failedResult<S extends z.ZodType>(
 ): RunResult<S> {
   return {
     result: null,
+    reasoning: null,
     sources: [],
     agentLog: [],
     tokens: { input: 0, output: 0 },
@@ -153,7 +167,11 @@ export async function run<S extends z.ZodType>(
   seedRowUrls(sink, row);
 
   const { agent, provider } = buildAgent(sink, model, cache, opts.fast ?? false);
-  const structuredOutput = { schema: action.output, model: provider.chat(model), errorStrategy: "warn" as const };
+  const structuredOutput = {
+    schema: structuredSchema(action.output),
+    model: provider.chat(model),
+    errorStrategy: "warn" as const,
+  };
   const maxOutputTokens = opts.maxOutputTokens ?? DEFAULT_MAX_TOKENS;
 
   const { text, missing } = fillTemplate(action.template, row);
@@ -161,7 +179,7 @@ export async function run<S extends z.ZodType>(
 
   debug("engine", `[${action.name}] row start model=${model} task="${text.slice(0, 120)}"`);
   const systemPrompt = { role: "system", content: action.instructions } as const;
-  let { object: result, inputTokens, outputTokens } = tally<S>(
+  let { object, inputTokens, outputTokens } = tally<S>(
     await agent.generate([systemPrompt, { role: "user", content: text }], {
       maxSteps: opts.maxSteps ?? DEFAULT_MAX_STEPS,
       modelSettings: { maxOutputTokens },
@@ -170,10 +188,10 @@ export async function run<S extends z.ZodType>(
   );
   debug(
     "engine",
-    `[${action.name}] agent pass: ${inputTokens} in / ${outputTokens} out tok, ${sink.log.length} steps, object=${result !== null} ${Math.round(performance.now() - started)}ms`,
+    `[${action.name}] agent pass: ${inputTokens} in / ${outputTokens} out tok, ${sink.log.length} steps, object=${object !== null} ${Math.round(performance.now() - started)}ms`,
   );
 
-  if (result === null) {
+  if (object === null) {
     debug("engine", `[${action.name}] structuring returned null → finalizer over ${sink.log.length} gathered steps`);
     const finalize = tally<S>(
       await buildFinalizer(provider, model).generate(
@@ -181,15 +199,16 @@ export async function run<S extends z.ZodType>(
         { modelSettings: { maxOutputTokens: Math.max(maxOutputTokens, FINALIZE_MAX_TOKENS) }, structuredOutput },
       ),
     );
-    result = finalize.object;
+    object = finalize.object;
     inputTokens += finalize.inputTokens;
     outputTokens += finalize.outputTokens;
-    debug("engine", `[${action.name}] finalizer: object=${result !== null}, +${finalize.inputTokens} in / +${finalize.outputTokens} out tok`);
+    debug("engine", `[${action.name}] finalizer: object=${object !== null}, +${finalize.inputTokens} in / +${finalize.outputTokens} out tok`);
   }
   record(sink, { type: "answer" });
 
   return {
-    result,
+    result: object?.answer ?? null,
+    reasoning: object?.reasoning ?? null,
     sources: [...sink.sources],
     agentLog: sink.log,
     tokens: { input: inputTokens, output: outputTokens },

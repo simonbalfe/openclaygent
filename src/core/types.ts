@@ -41,6 +41,7 @@ export interface RunCost {
 
 export interface RunResult<S extends z.ZodType> {
   result: z.infer<S> | null;
+  reasoning: string | null;
   sources: string[];
   agentLog: AgentStep[];
   tokens: { input: number; output: number };

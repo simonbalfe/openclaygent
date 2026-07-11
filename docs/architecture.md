@@ -154,6 +154,9 @@ Every run returns `RunResult<S>` (`src/core/types.ts`):
 - `result` — the schema-shaped answer, or null (null when skipped, when both the agent
   loop and the finalization fallback failed to produce structured output, or when the row
   threw — in which case `error` carries the message).
+- `reasoning` — one or two model-written sentences on which sources settled the answer
+  (the structuring pass wraps the action's schema as `{ answer, reasoning }`, so it is
+  grounded in the same findings; null whenever `result` is null).
 - `sources` — every URL the tools touched.
 - `agentLog` — ordered `AgentStep[]`, the replay log of search/fetch/answer steps. Each
   step carries `results: StepResult[]` — what the tool actually returned (title, URL,
@@ -226,15 +229,18 @@ bun run cli -- \
 Zod at the boundary via `zod-from-json-schema`) **or** a short form for flat outputs:
 `string` | `number` | `boolean` | `a|b|c` (enum) | trailing `?` for nullable. `src/core/schema.ts`
 detects which (a real JSON Schema has `type:"object"`/`properties`) and routes accordingly;
-either way the engine receives a Zod schema. `--json` prints raw JSON; `--out <file>` writes
-results to disk; `--model <id>` overrides the model per run; `--max-steps <n>` caps the agent
-loop iterations (default 5); `--concurrency <n>` sets how many rows run in parallel
-(default 5, wired as `RunOptions.concurrency`); `--fast` skips the heavy fetch rungs
-(proxy, solver) to cap page latency (wired as `RunOptions.fast`). Agent steps **always stream live** as they
-happen — query, provider used (`via`), and the ladder `trail` with escalation reasons (wired
-as `RunOptions.onStep`, fired by the same `record()` that appends to `agentLog`; goes to
-stderr under `--json` so stdout stays pipeable). `--verbose` adds result previews to that
-live trace — search hits (title, URL, snippet) and fetched page sizes/text previews.
+either way the engine receives a Zod schema. By default stdout carries only the
+answer — `{ result, reasoning, sources }` (one object, or an array under `--rows`); `--json` prints the full
+`RunResult` envelope; `--pretty` prints a human per-row view with cost/token stats;
+`--out <file>` writes the full results to disk; `--model <id>` overrides the model per run;
+`--max-steps <n>` caps the agent loop iterations (default 5); `--concurrency <n>` sets how
+many rows run in parallel (default 5, wired as `RunOptions.concurrency`); `--fast` skips
+the heavy fetch rungs (proxy, solver) to cap page latency (wired as `RunOptions.fast`).
+Agent steps **always stream live** to stderr as they happen — query, provider used (`via`),
+and the ladder `trail` with escalation reasons (wired as `RunOptions.onStep`, fired by the
+same `record()` that appends to `agentLog`; stderr keeps stdout pipeable). `--verbose` adds
+result previews to that live trace — search hits (title, URL, snippet) and fetched page
+sizes/text previews.
 
 ## HTTP API
 

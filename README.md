@@ -66,7 +66,7 @@ OpenRouter is required), and starts the free search + fetch stack plus the API v
 When it finishes: API at `http://localhost:8080/docs`, CLI available globally as
 `openclaygent`.
 
-- Already cloned? `./scripts/setup.sh`
+- Already cloned? `bun run setup`
 - Manual instead: `bun install && cp .env.example .env && docker compose up -d`, then edit `.env`
 - No Docker? Set `EXA_API_KEY` and skip compose — Exa searches, the built-in `impit` rung
   fetches. Zero infra, but you pay per search.
@@ -93,20 +93,23 @@ The full list, including per-actor overrides and cache tuning, is in `.env.examp
 ## Use it: CLI
 
 ```bash
-openclaygent --json \
+openclaygent \
   --instructions "Does this company offer a free trial? Check their pricing page." \
   --template "Company: {{company}}" \
   --schema '{"free_trial":"boolean","evidence_url":"string?"}' \
   --input company=Linear
 # → { "result": { "free_trial": true, "evidence_url": "https://linear.app/pricing" },
-#     "sources": [...], "cost": {...}, "model": "google/gemini-3.1-flash-lite" }
+#     "reasoning": "linear.app/pricing shows a free plan, no trial period.",
+#     "sources": ["https://linear.app/pricing", ...] }
 ```
 
-`--json` prints clean JSON to stdout (warnings to stderr), so it pipes into scripts and
-agents. Batch with `--rows leads.csv --out enriched.json`; skip unqualified rows with
-`--require domain`; add `--fast` to cap page latency (fetch skips the slow anti-bot rungs —
-hard-walled pages come back empty instead of taking minutes). Full flags:
-`openclaygent --help`.
+By default stdout is just the answer — the schema-shaped `result` plus a one-line
+`reasoning` and the `sources` behind it (live step trace goes to stderr), so it pipes
+straight into scripts and agents. `--json` adds the full envelope — agent log, exact cost,
+tokens; `--pretty` is a human table. Batch with
+`--rows leads.csv --out enriched.json`; skip unqualified rows with `--require domain`; add
+`--fast` to cap page latency (fetch skips the slow anti-bot rungs — hard-walled pages come
+back empty instead of taking minutes). Full flags: `openclaygent --help`.
 
 ## Use it: HTTP API
 
@@ -133,7 +136,6 @@ Removes containers, images, the global link, and the install directory; leaves y
 
 ## Docs
 
-- `docs/walkthrough.md` — the flow and why each step works the way it does. Start here.
-- `docs/architecture.md` — the mechanism: action, loop, contract, file map.
+- `docs/architecture.md` — the mechanism: action, loop, contract, file map. Start here.
 - `docs/decisions.md` — the non-obvious choices and the conventions that bite.
 - `docs/roadmap.md` — what's shipped and what's next.
