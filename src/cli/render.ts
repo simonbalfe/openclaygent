@@ -24,12 +24,12 @@ export function formatStep(s: AgentStep, detailed = false): string[] {
       const d = all[i];
       const via = d?.via ? ` [${d.via}]` : "";
       const chars = d?.chars !== undefined ? ` → ${d.chars} chars` : "";
-      lines.push(`fetch     ${u}${via}${chars}`);
+      lines.push(`fetch     ${u}${via}${chars}${s.cached ? " (cached)" : ""}`);
       if (d?.trail?.length) lines.push(`    ladder: ${d.trail.join(" → ")}`);
       if (detailed && d?.preview) lines.push(`       "${d.preview}"`);
     });
   } else if (s.type === "linkedin" || s.type === "crunchbase") {
-    lines.push(`${s.type}  ${s.query} → ${s.resultCount} items`);
+    lines.push(`${s.type}  ${s.query} → ${s.resultCount} items${s.cached ? " (cached)" : ""}`);
     details.forEach((r, i) => {
       lines.push(`    ${i + 1}. ${[r.title, r.preview].filter(Boolean).join(" — ")}`);
       if (r.url) lines.push(`       ${r.url}`);

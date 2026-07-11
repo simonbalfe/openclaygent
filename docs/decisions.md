@@ -175,7 +175,16 @@ are $0.
 `src/core/cache.ts` is a tiny in-memory cache (`createCache` → `getOrCompute(ns, key, fn)`).
 `runTable` makes **one** instance and threads it through every `run` → `buildAgent` →
 `webTools`, so all rows of a table share it; a lone `run` gets its own throwaway cache. It
-backs `web_search` (key `query|max_results`) and `fetch_page` (key `normalizeUrl(url)`).
+backs `web_search` (key `query|max_results`), `fetch_page` (key `normalizeUrl(url)`), and
+every Apify-backed tool via `runActorCached` (key `actor|JSON.stringify(input)`) — the
+linkedin_* and crunchbase_company tools MUST go through it, never call `runActor` directly
+from a tool. The model repeats identical tool calls despite prompt rules against it (both
+across steps and as parallel calls inside one step, which execute before any result lands
+in context), and each bare `runActor` repeat re-bills Apify: one observed single-row run
+fired `linkedin_company` 7x and `crunchbase_company` 6x, $0.03 of pure waste. The cache is
+the deterministic guard the prompt cannot be. Empty actor results ride the same L1
+memoization (the promise stays in the map; `cacheable` only gates the L2 write), so a
+0-item lookup also stops re-billing.
 Four choices that bite if you change them:
 
 - **Per-run scope, never cross-run.** The cache lives only for one `runTable` call, then is
