@@ -8,8 +8,8 @@ its env is unset) — mechanism and rung order in `docs/architecture.md` (The to
 
 ## Run it
 
-- `curl -fsSL <raw>/scripts/install.sh | bash` — the from-nothing entry (`scripts/install.sh`): clones the repo to `$HOME/openclaygent` (override `OPENCLAYGENT_DIR`/`OPENCLAYGENT_REPO`), then execs `scripts/setup.sh` with stdin bound to `/dev/tty` so the key prompts work even under `curl | bash`.
-- `./scripts/setup.sh` — the one-click entry once cloned (`scripts/setup.sh` → `scripts/setup.ts`): installs Bun if missing, then `bun install`, creates `.env`, reuses any keys already exported in the shell env (skips prompting for those; also lets non-interactive `curl | bash` self-configure), prompts only for the rest (OpenRouter required; Exa/Tavily/Apify optional), and offers `docker compose up -d` which now brings up the free stack **and** the API. The service URLs are auto-defaulted in code, never prompted. (`bun run setup` skips the Bun-install step if you already have Bun.)
+- `curl -fsSL <raw>/scripts/install.sh | bash` — the from-nothing entry (`scripts/install.sh`): clones the repo to `$HOME/openclaygent` (override `OPENCLAYGENT_DIR`/`OPENCLAYGENT_REPO`), installs Bun if missing, then execs `bun run scripts/setup.ts` with stdin bound to `/dev/tty` so the key prompts work even under `curl | bash`.
+- `bun run setup` — the one-click entry once cloned (`scripts/setup.ts`, needs Bun): `bun install`, creates `.env`, reuses any keys already exported in the shell env (skips prompting for those; also lets non-interactive `curl | bash` self-configure), prompts only for the rest (OpenRouter required; Exa/Tavily/Apify optional), and offers `docker compose up -d` which brings up the free stack **and** the API. The service URLs are auto-defaulted in code, never prompted.
 - `bun run cli -- --help` — the CLI entry (`src/cli.ts`); see `docs/architecture.md` (CLI). Setup runs `bun link`, so a global `openclaygent` command (package.json `bin`) also points at the install dir.
 - `./scripts/uninstall.sh` — clean wipe (confirm-gated, `-y`/`OPENCLAYGENT_YES=1` to skip). Reverts only what the install adds: `docker compose down -v`, removes the `openclaygent-api` + patchright images (all tags), `bun unlink` + drops the global `openclaygent` bin (only if it links into an openclaygent checkout), deletes `$HOME/openclaygent` (override `OPENCLAYGENT_DIR`) but only after confirming it's an openclaygent checkout and not `/`/`$HOME`. Never touches the shared `searxng` base image, other projects, or `~/.zshrc` keys.
 - `bun run api` — the HTTP entry (`src/api.ts`, Hono + OpenAPI): `POST /run`, `/docs`, `/openapi.json`, `/health` on `PORT` (default 8080). Both entries share `core/action.ts` + `runTable` — never duplicate run logic into either. See `docs/architecture.md` (HTTP API).
@@ -34,7 +34,6 @@ its env is unset) — mechanism and rung order in `docs/architecture.md` (The to
 
 ## Docs (read before changing code)
 
-- `docs/walkthrough.md` — plain-language tour of the whole flow + the reasoning for each step (the narrative "why"; points to architecture/decisions for detail).
 - `docs/architecture.md` — the action primitive, the loop, the contract, the file map (canonical — other docs point here, never copy it), scope.
 - `docs/decisions.md` — the non-obvious choices and the conventions that bite (Mastra v1 tool signature, separate structuring model, token cap, model choice, finalization fallback, model tiering). Read this before touching the agent, tools, or engine — each gotcha silently breaks a run.
 - `docs/roadmap.md` — feature checklist: what's shipped and what's still to add (parity gaps vs Claygent + Ferret).

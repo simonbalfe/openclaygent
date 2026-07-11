@@ -16,10 +16,17 @@ fi
 
 cd "${DIR}"
 
+if ! command -v bun >/dev/null 2>&1; then
+  echo "Bun not found - installing Bun."
+  curl -fsSL https://bun.sh/install | bash
+  export BUN_INSTALL="${BUN_INSTALL:-$HOME/.bun}"
+  export PATH="$BUN_INSTALL/bin:$PATH"
+fi
+
 if [ -e /dev/tty ]; then
-  exec ./scripts/setup.sh < /dev/tty
+  exec bun run scripts/setup.ts < /dev/tty
 else
   echo "No terminal detected for interactive key prompts - running non-interactive."
-  echo "After it finishes, edit ${DIR}/.env and run ./scripts/setup.sh again."
-  exec ./scripts/setup.sh
+  echo "After it finishes, edit ${DIR}/.env and run 'bun run setup' again."
+  exec bun run scripts/setup.ts
 fi
