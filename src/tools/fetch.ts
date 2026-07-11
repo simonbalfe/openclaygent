@@ -3,6 +3,7 @@ import { extractText, getDocumentProxy } from "unpdf";
 import { z } from "zod";
 import type { Cache } from "../core/cache.ts";
 import { tavilyUsd } from "../core/cost.ts";
+import { debug, reason } from "../core/debug.ts";
 import { fitToBudget, htmlToMarkdown } from "./extract.ts";
 import { impit, tavilyClient } from "./providers.ts";
 import { assertVerifiedUrl, clip, noteUrl, noteUrlsInText, normalizeUrl, record, type Sink } from "./sink.ts";
@@ -12,7 +13,8 @@ async function pdfToText(buf: ArrayBuffer): Promise<string> {
     const pdf = await getDocumentProxy(new Uint8Array(buf));
     const { text } = await extractText(pdf, { mergePages: true });
     return Array.isArray(text) ? text.join("\n") : text;
-  } catch {
+  } catch (e) {
+    debug("fetch.pdf", reason(e));
     return "";
   }
 }
@@ -48,19 +50,22 @@ function patchrightBase(): string {
 async function patchrightFetch(
   url: string,
   opts: { proxy?: boolean; solve?: boolean } = {},
-): Promise<string> {
+): Promise<{ text: string }> {
   const base = patchrightBase();
-  if (!base) return "";
   const q = new URLSearchParams({ url });
   if (opts.proxy) q.set("proxy", "1");
   if (opts.solve) q.set("solve", "1");
   const timeout = opts.solve ? 120000 : 45000;
   try {
     const res = await fetch(`${base}/fetch?${q}`, { signal: AbortSignal.timeout(timeout) });
-    if (!res.ok) return "";
-    return htmlToMarkdown(await res.text(), url);
-  } catch {
-    return "";
+    if (!res.ok) {
+      debug("fetch.patchright", `${url} http ${res.status}`);
+      return { text: "" };
+    }
+    return { text: htmlToMarkdown(await res.text(), url) };
+  } catch (e) {
+    debug("fetch.patchright", `${url} ${reason(e)}`);
+    return { text: "" };
   }
 }
 
@@ -73,7 +78,8 @@ async function impitFetch(url: string): Promise<{ text: string; status: number }
       return { text: await pdfToText(await res.arrayBuffer()), status: res.status };
     if (type && !type.includes("html") && !type.includes("text")) return { text: "", status: res.status };
     return { text: htmlToMarkdown(await res.text(), url), status: res.status };
-  } catch {
+  } catch (e) {
+    debug("fetch.impit", `${url} ${reason(e)}`);
     return { text: "", status: 0 };
   }
 }
@@ -88,7 +94,8 @@ async function tavilyExtractFetch(url: string): Promise<{ text: string; credits:
       includeUsage: true,
     });
     return { text: data.results[0]?.rawContent ?? "", credits: data.usage?.credits ?? 0 };
-  } catch {
+  } catch (e) {
+    debug("fetch.tavily", `${url} ${reason(e)}`);
     return { text: "", credits: 0 };
   }
 }
@@ -118,57 +125,51 @@ function unusableReason(text: string, status?: number): string {
   return `bot-wall/shell (${text.length}c)`;
 }
 
+interface FetchRung {
+  name: string;
+  enabled: () => boolean;
+  run: (url: string) => Promise<{ text: string; status?: number; credits?: number }>;
+}
+
+const patchrightEnabled = () => patchrightBase() !== "";
+
+const FETCH_LADDER: FetchRung[] = [
+  { name: "impit", enabled: () => true, run: impitFetch },
+  { name: "patchright", enabled: patchrightEnabled, run: (url) => patchrightFetch(url) },
+  { name: "patchright+proxy", enabled: patchrightEnabled, run: (url) => patchrightFetch(url, { proxy: true }) },
+  { name: "patchright+solver", enabled: patchrightEnabled, run: (url) => patchrightFetch(url, { proxy: true, solve: true }) },
+  { name: "tavily", enabled: () => Boolean(tavilyClient()), run: tavilyExtractFetch },
+];
+
 async function fetchLadder(url: string): Promise<FetchResult> {
   const trail: string[] = [];
-  const patchrightEnabled = patchrightBase() !== "";
-
-  const local = await impitFetch(url);
-  if (usable(local.text)) {
-    trail.push(`impit: ok (${local.text.length}c)`);
-    return { text: local.text, via: "impit", tavilyCredits: 0, outcome: "ok", trail };
-  }
-  trail.push(`impit: ${unusableReason(local.text, local.status)}`);
-  if (isDeadStatus(local.status)) return { text: "", via: "impit", tavilyCredits: 0, outcome: "dead", trail };
-
-  if (!patchrightEnabled) trail.push("patchright: skipped (no env)");
-
-  const rendered = await patchrightFetch(url);
-  if (patchrightEnabled) {
-    if (usable(rendered)) {
-      trail.push(`patchright: ok (${rendered.length}c)`);
-      return { text: rendered, via: "patchright", tavilyCredits: 0, outcome: "ok", trail };
+  const best = { text: "", via: "impit" };
+  let tavilyCredits = 0;
+  for (const rung of FETCH_LADDER) {
+    if (!rung.enabled()) {
+      trail.push(`${rung.name}: skipped (no env)`);
+      continue;
     }
-    trail.push(`patchright: ${unusableReason(rendered)}`);
-  }
-
-  const proxied = await patchrightFetch(url, { proxy: true });
-  if (patchrightEnabled) {
-    if (usable(proxied)) {
-      trail.push(`patchright+proxy: ok (${proxied.length}c)`);
-      return { text: proxied, via: "patchright+proxy", tavilyCredits: 0, outcome: "ok", trail };
+    const started = performance.now();
+    const { text, status, credits } = await rung.run(url);
+    debug(
+      "fetch.ladder",
+      `${rung.name} ${url} → ${usable(text) ? `ok (${text.length}c)` : unusableReason(text, status)} ${Math.round(performance.now() - started)}ms`,
+    );
+    tavilyCredits += credits ?? 0;
+    if (usable(text)) {
+      trail.push(`${rung.name}: ok (${text.length}c)`);
+      return { text, via: rung.name, tavilyCredits, outcome: "ok", trail };
     }
-    trail.push(`patchright+proxy: ${unusableReason(proxied)}`);
-  }
-
-  const solved = await patchrightFetch(url, { proxy: true, solve: true });
-  if (patchrightEnabled) {
-    if (usable(solved)) {
-      trail.push(`patchright+solver: ok (${solved.length}c)`);
-      return { text: solved, via: "patchright+solver", tavilyCredits: 0, outcome: "ok", trail };
+    trail.push(`${rung.name}: ${unusableReason(text, status)}`);
+    if (status !== undefined && isDeadStatus(status))
+      return { text: "", via: rung.name, tavilyCredits, outcome: "dead", trail };
+    if (text) {
+      best.text = text;
+      best.via = rung.name;
     }
-    trail.push(`patchright+solver: ${unusableReason(solved)}`);
   }
-
-  const tav = await tavilyExtractFetch(url);
-  if (usable(tav.text)) {
-    trail.push(`tavily: ok (${tav.text.length}c)`);
-    return { text: tav.text, via: "tavily", tavilyCredits: tav.credits, outcome: "ok", trail };
-  }
-  trail.push(`tavily: ${tavilyClient() ? unusableReason(tav.text) : "skipped (no env)"}`);
-
-  const best = tav.text || solved || proxied || rendered || local.text;
-  const via = tav.text ? "tavily" : rendered ? "patchright" : "impit";
-  return { text: best, via, tavilyCredits: tav.credits, outcome: "transient", trail };
+  return { ...best, tavilyCredits, outcome: "transient", trail };
 }
 
 export function fetchPageTool(sink: Sink, cache: Cache) {

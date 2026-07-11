@@ -1,3 +1,5 @@
+import { debug, reason } from "./debug.ts";
+
 export interface CostAccumulator {
   openrouter: number;
   exa: number;
@@ -24,7 +26,8 @@ export function extractCostUsd(contentType: string, body: string): number {
   try {
     const parsed = JSON.parse(body) as { usage?: { cost?: number } };
     return parsed.usage?.cost ?? 0;
-  } catch {
+  } catch (e) {
+    debug("cost", `usage parse failed: ${reason(e)}`);
     return 0;
   }
 }

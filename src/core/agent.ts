@@ -2,6 +2,7 @@ import { Agent } from "@mastra/core/agent";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import type { Cache } from "./cache.ts";
 import { type CostAccumulator, extractCostUsd } from "./cost.ts";
+import { debug, reason } from "./debug.ts";
 import { crunchbaseTools } from "../tools/crunchbase.ts";
 import { linkedinTools } from "../tools/linkedin.ts";
 import { type Sink } from "../tools/sink.ts";
@@ -14,11 +15,16 @@ function tapCost(cost: CostAccumulator): typeof fetch {
     input: Parameters<typeof fetch>[0],
     init?: Parameters<typeof fetch>[1],
   ): Promise<Response> => {
+    const started = performance.now();
     const res = await fetch(input, init);
     try {
       const body = await res.clone().text();
-      cost.openrouter += extractCostUsd(res.headers.get("content-type") ?? "", body);
-    } catch {}
+      const usd = extractCostUsd(res.headers.get("content-type") ?? "", body);
+      cost.openrouter += usd;
+      debug("llm", `${res.status} ${body.length}b cost=$${usd.toFixed(6)} ${Math.round(performance.now() - started)}ms`);
+    } catch (e) {
+      debug("llm", `cost tap failed: ${reason(e)}`);
+    }
     return res;
   };
   return Object.assign(tapped, { preconnect: globalThis.fetch.preconnect }) as typeof fetch;
@@ -136,7 +142,7 @@ export function buildAgent(
   const provider = buildOpenRouter(sink.cost);
   const tools = {
     ...webTools(sink, cache),
-    ...(process.env.APIFY_API_TOKEN ? { ...linkedinTools(sink), ...crunchbaseTools(sink) } : {}),
+    ...(process.env.APIFY_API_TOKEN ? { ...linkedinTools(sink, cache), ...crunchbaseTools(sink, cache) } : {}),
   };
   const agent = new Agent({
     id: `openclaygent-${model.replace(/[^a-z0-9]/gi, "-")}`,

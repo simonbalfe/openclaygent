@@ -17,6 +17,8 @@ export interface Cache {
   ): Promise<{ value: T; cached: boolean }>;
 }
 
+import { debug } from "./debug.ts";
+
 const DEFAULT_TTL_MS = 3600_000;
 
 export function createCache(l2?: Layer2, defaultTtlMs: number = DEFAULT_TTL_MS): Cache {
@@ -30,17 +32,29 @@ export function createCache(l2?: Layer2, defaultTtlMs: number = DEFAULT_TTL_MS):
     ): Promise<{ value: T; cached: boolean }> {
       const k = `${ns}:${key}`;
       const existing = l1.get(k) as Promise<T> | undefined;
-      if (existing) return existing.then((value) => ({ value, cached: true }));
+      if (existing) {
+        debug("cache", `${k.slice(0, 120)} l1 hit`);
+        return existing.then((value) => ({ value, cached: true }));
+      }
 
       let cached = true;
       const work = (async (): Promise<T> => {
         if (l2) {
           const hit = (await l2.get(ns, key).catch(() => undefined)) as T | undefined;
-          if (hit != null) return hit;
+          if (hit != null) {
+            debug("cache", `${k.slice(0, 120)} l2 hit`);
+            return hit;
+          }
         }
         cached = false;
+        const started = performance.now();
         const value = await fn();
-        if (l2 && (opts?.cacheable?.(value) ?? true)) {
+        const cacheable = opts?.cacheable?.(value) ?? true;
+        debug(
+          "cache",
+          `${k.slice(0, 120)} miss, computed ${Math.round(performance.now() - started)}ms${cacheable ? "" : ", uncacheable"}`,
+        );
+        if (l2 && cacheable) {
           const resolved = typeof opts?.ttlMs === "function" ? opts.ttlMs(value) : opts?.ttlMs;
           void l2.set(ns, key, value, resolved ?? defaultTtlMs).catch(() => {});
         }

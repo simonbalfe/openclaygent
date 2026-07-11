@@ -4,6 +4,7 @@ import type { AnyNode, Element } from "domhandler";
 import { parseHTML } from "linkedom";
 import TurndownService from "turndown";
 import { gfm } from "turndown-plugin-gfm";
+import { debug, reason } from "../core/debug.ts";
 
 const MIN_ARTICLE_CHARS = 250;
 
@@ -188,17 +189,22 @@ function tidy(markdown: string): string {
 }
 
 function readabilityMarkdown(html: string, baseUrl?: string): string | null {
+  const fallthrough = (why: string): null => {
+    debug("extract.readability", `${baseUrl ?? "(no url)"} → prune path: ${why}`);
+    return null;
+  };
   try {
     const { document } = parseHTML(html);
     const doc = document as unknown as ConstructorParameters<typeof Readability>[0];
-    if (!isProbablyReaderable(doc)) return null;
+    if (!isProbablyReaderable(doc)) return fallthrough("not readerable");
     const article = new Readability(doc).parse();
     const content = article?.content;
-    if (!content) return null;
-    if ((article?.textContent ?? "").replace(/\s+/g, " ").trim().length < MIN_ARTICLE_CHARS) return null;
+    if (!content) return fallthrough("no article content");
+    const textLen = (article?.textContent ?? "").replace(/\s+/g, " ").trim().length;
+    if (textLen < MIN_ARTICLE_CHARS) return fallthrough(`article too short (${textLen}c)`);
     return tidy(buildConverter(baseUrl).turndown(content));
-  } catch {
-    return null;
+  } catch (e) {
+    return fallthrough(`threw: ${reason(e)}`);
   }
 }
 
@@ -331,7 +337,9 @@ export function extractStructuredData(html: string): string {
     if (!raw.trim()) return;
     try {
       collectLdNodes(JSON.parse(raw), nodes);
-    } catch {}
+    } catch (e) {
+      debug("extract.jsonld", `malformed block skipped: ${reason(e)}`);
+    }
   });
 
   const seen = new Set<string>();

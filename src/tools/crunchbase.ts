@@ -1,9 +1,10 @@
-import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
-import { runActor } from "./apify.ts";
-import { assertVerifiedUrl, clip, record, type Sink } from "./sink.ts";
+import type { Cache } from "../core/cache.ts";
+import { apifyTool } from "./apify.ts";
+import type { Sink } from "./sink.ts";
 
 const DEFAULT_ACTOR = "parseforge~crunchbase-scraper";
+const ORG_URL = /crunchbase\.com\/organization\//i;
 
 interface RawOrg {
   name?: string;
@@ -38,11 +39,12 @@ function nameOf(x: { name?: string } | string | undefined): string {
   return typeof x === "string" ? x : (x?.name ?? "");
 }
 
-export function crunchbaseTools(sink: Sink) {
-  const crunchbase_company = createTool({
+export function crunchbaseTools(sink: Sink, cache: Cache) {
+  const crunchbase_company = apifyTool(sink, cache, {
     id: "crunchbase_company",
     description:
       "FALLBACK ONLY. Get a company's Crunchbase funding & firmographics as structured data — total funding, latest round (type, amount, date), investors, founders, employee range, HQ, founded year, IPO status. Crunchbase is bot-walled, so call this ONLY after web_search has failed to pin the funding/firmographic facts from open sources. Costs Apify credits — call at most once per company. Pass the crunchbase.com/organization URL if one appeared in search results, otherwise the exact company name.",
+    type: "crunchbase",
     inputSchema: z.object({
       company: z
         .string()
@@ -50,21 +52,25 @@ export function crunchbaseTools(sink: Sink) {
           "Crunchbase organization URL (preferred, e.g. https://www.crunchbase.com/organization/openai) or the exact company name.",
         ),
     }),
-    outputSchema: z.object({ company: z.unknown() }),
-    execute: async ({ company }) => {
-      const actor = process.env.CRUNCHBASE_ACTOR ?? DEFAULT_ACTOR;
-      const isUrl = /crunchbase\.com\/organization\//i.test(company);
-      if (isUrl)
-        assertVerifiedUrl(sink, company, "Pass the exact company name instead, or web_search for the crunchbase.com/organization page first.");
-      const input = isUrl
+    outputKey: "company",
+    single: true,
+    prepare: ({ company }) => ({
+      actor: process.env.CRUNCHBASE_ACTOR ?? DEFAULT_ACTOR,
+      actorInput: ORG_URL.test(company)
         ? { startUrls: [{ url: company }], maxItems: 1 }
-        : { searchQuery: company, maxItems: 1 };
-      const { items, usd } = await runActor<RawOrg>(actor, input);
-      sink.cost.apify += usd;
-      const o = items[0];
-      const profile = o && {
+        : { searchQuery: company, maxItems: 1 },
+      query: company,
+      guard: ORG_URL.test(company)
+        ? {
+            url: company,
+            hint: "Pass the exact company name instead, or web_search for the crunchbase.com/organization page first.",
+          }
+        : undefined,
+    }),
+    map: (items: RawOrg[], { company }) =>
+      items.slice(0, 1).map((o) => ({
         name: o.name ?? "",
-        crunchbaseUrl: o.cbUrl ?? o.crunchbaseUrl ?? o.url ?? (isUrl ? company : ""),
+        crunchbaseUrl: o.cbUrl ?? o.crunchbaseUrl ?? o.url ?? (ORG_URL.test(company) ? company : ""),
         website: o.website ?? "",
         foundedYear: o.founded ?? o.foundedOn ?? null,
         employeeCount: o.employeeCount ?? null,
@@ -79,27 +85,13 @@ export function crunchbaseTools(sink: Sink) {
         founders: (o.founders ?? []).map(nameOf).filter(Boolean).slice(0, 6),
         leadInvestors: (o.leadInvestors ?? o.investors ?? []).map(nameOf).filter(Boolean).slice(0, 10),
         ipoStatus: o.ipoStatus ?? o.operatingStatus ?? "",
-      };
-      if (profile?.crunchbaseUrl) sink.sources.add(profile.crunchbaseUrl);
-      record(sink, {
-        type: "crunchbase",
-        query: company,
-        resultCount: profile ? 1 : 0,
-        results: profile
-          ? [
-              {
-                title: profile.name,
-                url: profile.crunchbaseUrl,
-                preview: clip(
-                  `${profile.lastRound.type} ${profile.lastRound.amountUsd ?? ""} · ${profile.totalFundingUsd ?? ""}`,
-                ),
-              },
-            ]
-          : [],
-        cost: usd,
-      });
-      return { company: profile ?? null };
-    },
+      })),
+    view: (p) => ({
+      title: p.name,
+      url: p.crunchbaseUrl,
+      preview: `${p.lastRound.type} ${p.lastRound.amountUsd ?? ""} · ${p.totalFundingUsd ?? ""}`,
+    }),
+    sourceUrl: (p) => p.crunchbaseUrl,
   });
 
   return { crunchbase_company };

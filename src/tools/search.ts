@@ -2,6 +2,7 @@ import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 import type { Cache } from "../core/cache.ts";
 import { tavilyUsd } from "../core/cost.ts";
+import { debug, reason } from "../core/debug.ts";
 import { exaClient, tavilyClient } from "./providers.ts";
 import { clip, noteUrl, record, type Sink } from "./sink.ts";
 
@@ -99,8 +100,10 @@ export async function searchWeb(
       trail.push(`${rung.name}: skipped (no env)`);
       continue;
     }
+    const started = performance.now();
     try {
       const { results, exaUsd, tavilyCredits } = await rung.search(query, n);
+      debug("search.ladder", `${rung.name} "${query}" → ${results.length} results ${Math.round(performance.now() - started)}ms`);
       if (results.length) {
         trail.push(`${rung.name}: ${results.length} results`);
         return { results, via: rung.name, exaUsd, tavilyCredits, trail };
@@ -108,6 +111,7 @@ export async function searchWeb(
       trail.push(`${rung.name}: empty`);
       emptyVia = rung.name;
     } catch (e) {
+      debug("search.ladder", `${rung.name} "${query}" → error ${reason(e)} ${Math.round(performance.now() - started)}ms`);
       trail.push(`${rung.name}: error ${clipReason(e)}`);
       lastError = e;
     }

@@ -3,6 +3,7 @@ import { buildAgent, buildFinalizer, DEFAULT_MODEL } from "./agent.ts";
 import type { Cache } from "./cache.ts";
 import { createCacheFromEnv } from "./cache-pg.ts";
 import { emptyCost, tavilyUsd } from "./cost.ts";
+import { debug } from "./debug.ts";
 import { noteUrl, record, type Sink } from "../tools/sink.ts";
 import type { Action, AgentStep, Row, RunCost, RunResult } from "./types.ts";
 
@@ -157,6 +158,7 @@ export async function run<S extends z.ZodType>(
   const { text, missing } = fillTemplate(action.template, row);
   if (missing.length) console.warn(`[${action.name}] row missing: ${missing.join(", ")}`);
 
+  debug("engine", `[${action.name}] row start model=${model} task="${text.slice(0, 120)}"`);
   const systemPrompt = { role: "system", content: action.instructions } as const;
   let { object: result, inputTokens, outputTokens } = tally<S>(
     await agent.generate([systemPrompt, { role: "user", content: text }], {
@@ -165,8 +167,13 @@ export async function run<S extends z.ZodType>(
       structuredOutput,
     }),
   );
+  debug(
+    "engine",
+    `[${action.name}] agent pass: ${inputTokens} in / ${outputTokens} out tok, ${sink.log.length} steps, object=${result !== null} ${Math.round(performance.now() - started)}ms`,
+  );
 
   if (result === null) {
+    debug("engine", `[${action.name}] structuring returned null → finalizer over ${sink.log.length} gathered steps`);
     const finalize = tally<S>(
       await buildFinalizer(provider, model).generate(
         [systemPrompt, { role: "user", content: finalizePrompt(text, sink.log) }],
@@ -176,6 +183,7 @@ export async function run<S extends z.ZodType>(
     result = finalize.object;
     inputTokens += finalize.inputTokens;
     outputTokens += finalize.outputTokens;
+    debug("engine", `[${action.name}] finalizer: object=${result !== null}, +${finalize.inputTokens} in / +${finalize.outputTokens} out tok`);
   }
   record(sink, { type: "answer" });
 
@@ -207,6 +215,7 @@ export async function runTable<S extends z.ZodType>(
       try {
         results[i] = await run(action, rows[i]!, opts, cache);
       } catch (e) {
+        debug("engine", `row ${i} failed: ${e instanceof Error ? e.message : String(e)}`);
         results[i] = failedResult(model, e, Math.round(performance.now() - started));
       }
     }
