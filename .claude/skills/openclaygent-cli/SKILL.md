@@ -9,14 +9,13 @@ One command = one research brief run over one or more rows. The agent searches t
 web (cheapest-first ladders), reads pages when snippets aren't enough, and returns JSON
 validated against the schema you asked for, with reasoning and sources.
 
-Invocations (identical behavior):
-- `openclaygent <flags>` — global bin, linked by setup; runs from any directory.
-- `bun run cli -- <flags>` — from a checkout (note the `--` separator).
-- `docker compose run --rm claygent <flags>` — containerized, from a checkout.
+Invocation: `openclaygent <flags>` — the globally linked command, runs from any directory
+(installed by the setup one-liner; the install lives at `~/openclaygent`).
 
-Requires `OPENROUTER_API_KEY` in the checkout's `.env` (Bun auto-loads it). Free
-search/fetch needs the Docker stack up (`docker compose up -d`); without it, set
-`EXA_API_KEY` and it still works (paid search, plain HTTP fetch).
+Requires `OPENROUTER_API_KEY` in `~/openclaygent/.env` (set by setup). Free search/fetch
+needs the Docker stack up (setup starts it; `docker compose up -d` in `~/openclaygent`
+restarts it); without it, `EXA_API_KEY` in the same `.env` still works (paid search,
+plain HTTP fetch).
 
 ## The brief (required, unless --action)
 
