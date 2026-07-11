@@ -18,9 +18,11 @@ Rows (pick one):
   --rows <file.json|csv>  A batch of rows (JSON array of objects, or CSV with a header).
 
 Options:
-  --model <id>            OpenRouter model id (default: deepseek/deepseek-chat).
+  --model <id>            OpenRouter model id (default: google/gemini-3.1-flash-lite).
   --max-steps <n>         Max agent loop iterations (default: 5).
   --concurrency <n>       Rows to research in parallel (default: 5).
+  --fast                  Fetch never escalates to the slow anti-bot rungs (proxy, solver) —
+                          caps worst-case page latency; hard-walled pages come back empty.
   --json                  Print raw JSON results instead of the table.
   --verbose               Agent steps always stream live (query, provider used, ladder
                           trail). This adds result previews (titles, URLs, snippets) to

@@ -75,7 +75,7 @@ When it finishes: API at `http://localhost:8080/docs`, CLI available globally as
 
 | Variable | What it's for | Get one |
 |---|---|---|
-| `OPENROUTER_API_KEY` | The model (DeepSeek default; any OpenRouter model per run) | [openrouter.ai/keys](https://openrouter.ai/keys) |
+| `OPENROUTER_API_KEY` | The model (Gemini Flash Lite default; any OpenRouter model per run) | [openrouter.ai/keys](https://openrouter.ai/keys) |
 
 **Optional** — each key just enables its rung or tool:
 
@@ -99,12 +99,14 @@ openclaygent --json \
   --schema '{"free_trial":"boolean","evidence_url":"string?"}' \
   --input company=Linear
 # → { "result": { "free_trial": true, "evidence_url": "https://linear.app/pricing" },
-#     "sources": [...], "cost": {...}, "model": "deepseek/deepseek-chat" }
+#     "sources": [...], "cost": {...}, "model": "google/gemini-3.1-flash-lite" }
 ```
 
 `--json` prints clean JSON to stdout (warnings to stderr), so it pipes into scripts and
 agents. Batch with `--rows leads.csv --out enriched.json`; skip unqualified rows with
-`--require domain`. Full flags: `openclaygent --help`.
+`--require domain`; add `--fast` to cap page latency (fetch skips the slow anti-bot rungs —
+hard-walled pages come back empty instead of taking minutes). Full flags:
+`openclaygent --help`.
 
 ## Use it: HTTP API
 

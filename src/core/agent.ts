@@ -8,7 +8,7 @@ import { linkedinTools } from "../tools/linkedin.ts";
 import { type Sink } from "../tools/sink.ts";
 import { webTools } from "../tools/web.ts";
 
-export const DEFAULT_MODEL = process.env.OPENCLAY_MODEL ?? "deepseek/deepseek-chat";
+export const DEFAULT_MODEL = process.env.OPENCLAY_MODEL ?? "google/gemini-3.1-flash-lite";
 
 function tapCost(cost: CostAccumulator): typeof fetch {
   const tapped = async (
@@ -138,10 +138,11 @@ export function buildAgent(
   sink: Sink,
   model: string = DEFAULT_MODEL,
   cache: Cache,
+  fast = false,
 ): { agent: Agent; provider: ReturnType<typeof buildOpenRouter> } {
   const provider = buildOpenRouter(sink.cost);
   const tools = {
-    ...webTools(sink, cache),
+    ...webTools(sink, cache, fast),
     ...(process.env.APIFY_API_TOKEN ? { ...linkedinTools(sink, cache), ...crunchbaseTools(sink, cache) } : {}),
   };
   const agent = new Agent({

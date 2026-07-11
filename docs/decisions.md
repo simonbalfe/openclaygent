@@ -40,14 +40,18 @@ option (which does not exist in Mastra v1 and fails typecheck). The cap matters 
 OpenRouter reserves the model's full `max_tokens` against the account balance up front; a
 near-empty balance returns `402` ("can only afford N tokens") unless the cap is lowered.
 
-## Default model: `deepseek/deepseek-chat`
+## Default model: `google/gemini-3.1-flash-lite`
 
-`openai/gpt-4o-mini` via OpenRouter intermittently returns `431` ("request headers are too
-large") on tool-calling loops once the accumulated context grows. DeepSeek is the default
-instead: cheap, open-weight, reliable here, and the right fit for the open-source thesis
-(skip Clay's credit margin on bring-your-own keys). Override per run with `opts.model` or
-the `OPENCLAY_MODEL` env var. The model id must be a valid OpenRouter slug; an invalid one
-returns `404 No endpoints found`.
+The default is the Balanced tier of the table below: flash-lite serving is fast (per-row
+latency is dominated by 6-7 sequential LLM round-trips, so model speed is the biggest
+wall-clock lever), the 1M context never truncates a long tool loop, and it reconciles
+conflicting snippets that budget chat models guess at — while staying near DeepSeek's
+price. `deepseek/deepseek-chat` (the previous default) remains the budget pick for
+high-volume clean lookups. Two gotchas that shaped this: `openai/gpt-4o-mini` intermittently
+returns `431` ("request headers are too large") on tool-calling loops once context grows —
+avoid it; and the model id must be a valid OpenRouter slug or every call returns
+`404 No endpoints found`. Override per run with `opts.model`/`--model` or the
+`OPENCLAY_MODEL` env var.
 
 ## Model tiering: cost vs. intelligence
 
@@ -68,10 +72,10 @@ large run — they drift.
 
 | Tier | When | Model | $/M in | $/M out | Ctx |
 |---|---|---|---|---|---|
-| **Budget** | high-volume, clean lookups (a domain has the fact on one page) | `deepseek/deepseek-chat` *(default)* | 0.20 | 0.80 | 131K |
+| **Budget** | high-volume, clean lookups (a domain has the fact on one page) | `deepseek/deepseek-chat` | 0.20 | 0.80 | 131K |
 | | cheapest output, same class | `deepseek/deepseek-v3.2` | 0.23 | 0.34 | 131K |
 | | OpenAI budget tier | `openai/gpt-5-mini` | 0.25 | 2.0 | 400K |
-| **Balanced** | most enrichment; conflicting snippets need reconciling | `google/gemini-3.1-flash-lite` | 0.25 | 1.5 | 1M |
+| **Balanced** | most enrichment; conflicting snippets need reconciling | `google/gemini-3.1-flash-lite` *(default)* | 0.25 | 1.5 | 1M |
 | | open-weight mid | `z-ai/glm-4.6` | 0.43 | 1.74 | 203K |
 | | agentic mid | `moonshotai/kimi-k2` | 0.57 | 2.3 | 131K |
 | **Smart** | hard rows: funding histories, multi-source firmographics | `x-ai/grok-4.3` | 1.25 | 2.5 | 1M |
@@ -414,7 +418,11 @@ HTTP rather than Playwright's websocket protocol because Bun's ws client hangs a
 Playwright's server (Node connects fine); the HTTP seam also keeps `patchright` out of
 this package entirely. `PATCHRIGHT_URL` auto-defaults to the compose service at
 `http://localhost:9223` (set it empty to disable rendered fetch); the proxy and solver rungs
-still auto-skip when their env is unset (`EVOMI_*`, `CAPSOLVER_API_KEY`).
+still auto-skip when their env is unset (`EVOMI_*`, `CAPSOLVER_API_KEY`), and fast mode
+(CLI `--fast`, API `"fast": true`, wired through `RunOptions.fast`) skips both heavy rungs
+even when configured — the proxy/solver waits are where a blocked page burns minutes, so
+fast mode trades those pages for capped latency on bulk runs (the ladder still falls
+through to Tavily, which is paid but quick).
 Step log records the winning rung as `via: impit | patchright | patchright+proxy`, plus a
 per-URL `trail` naming each rung tried and why it escalated (`impit: bot-wall/shell (812c)`,
 `patchright: empty`), so an early jump to Tavily is explainable rather than silent.
