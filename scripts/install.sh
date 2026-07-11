@@ -17,6 +17,10 @@ fi
 cd "${DIR}"
 
 if ! command -v bun >/dev/null 2>&1; then
+  command -v unzip >/dev/null 2>&1 || {
+    echo "unzip is required to install Bun. Install it first (e.g. sudo apt install unzip) and re-run."
+    exit 1
+  }
   echo "Bun not found - installing Bun."
   curl -fsSL https://bun.sh/install | bash
   export BUN_INSTALL="${BUN_INSTALL:-$HOME/.bun}"
