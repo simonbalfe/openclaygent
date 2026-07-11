@@ -1,17 +1,12 @@
 # openclaygent
 
-A little web-research agent you hand a question and a table — it reads the live web for every
-row and hands back clean, **cited JSON**.
-
-It's the open-source take on Clay's Claygent, shipped as a **CLI and an HTTP API** so any
-agent, script, or workflow can call it. Ask it the niche facts no data vendor sells — "does
-this company offer a free trial?", "what CRM do they use?", "how many open engineering roles?"
-— and get a typed answer with the sources to back it, one per row.
+A web-research agent: hand it a question and a table, it reads the live web for every row
+and returns typed, **cited JSON**. The open-source take on Clay's Claygent, shipped as a
+CLI and an HTTP API.
 
 ## The idea
 
-Write the brief once: a plain-English question, the inputs it needs, and the shape of the
-answer you want back.
+Write the brief once — a plain-English question, the inputs, and the shape of the answer:
 
 ```jsonc
 {
@@ -21,15 +16,15 @@ answer you want back.
 }
 ```
 
-Point it at a row — `{ "company": "Linear", "domain": "linear.app" }` — and it searches, reads
-the page if it needs to, and returns typed, cited JSON. Run the **same brief** over a 500-row
-CSV and you get one result per row: the brief is fixed, the rows vary.
+Point it at a row — `{ "company": "Linear", "domain": "linear.app" }` — and it searches,
+reads pages when it needs to, and returns typed, cited JSON. Run the same brief over a
+500-row CSV and you get one result per row.
 
 ## How it works
 
 The agent loops — reason, pick a tool, observe — until it can answer. Its two tools are
-**waterfalls**: each rung runs only when the one above it fails or returns empty, so you spend
-on a paid rung only after the free ones miss. An unset key is just a skipped rung.
+cheapest-first ladders: a rung runs only when the one above it fails or returns empty, and
+an unset key is a skipped rung, never an error. You pay only when the free rungs miss.
 
 ```mermaid
 flowchart TB
@@ -55,67 +50,47 @@ flowchart TB
   class S2,S3,F3,F4,F5 paid
 ```
 
-Green = free rung, amber = paid. The Turnstile **click** is free (a real browser ticks the
-checkbox and the widget issues its own token); only the CapSolver fallback and the Evomi
-proxy cost money — and those aren't metered in `RunResult.cost`, which tracks only the
-LLM, Exa, Apify, and Tavily.
+Green = free, amber = paid. `RunResult.cost` meters the LLM, Exa, Apify, and Tavily; the
+Evomi proxy and CapSolver fallback bill on their own accounts.
 
 ## Setup
 
-From nothing to running in one line — clones the repo, installs Bun if you don't have it,
-installs deps, creates `.env`, asks only for the keys that matter, then brings up the **free
-search + fetch stack _and_ the API server**:
+One line from nothing:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/simonbalfe/openclaygent/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/simonbalfe/openclaygent/main/scripts/install.sh | bash
 ```
 
-Already cloned? Just run the setup step directly:
+It clones the repo, installs Bun and deps, creates `.env`, prompts for keys (only
+OpenRouter is required), and starts the free search + fetch stack plus the API via Docker.
+When it finishes: API at `http://localhost:8080/docs`, CLI available globally as
+`openclaygent`.
 
-```bash
-./setup.sh
-```
+- Already cloned? `./scripts/setup.sh`
+- Manual instead: `bun install && cp .env.example .env && docker compose up -d`, then edit `.env`
+- No Docker? Set `EXA_API_KEY` and skip compose — Exa searches, the built-in `impit` rung
+  fetches. Zero infra, but you pay per search.
 
-When it finishes, the API is live at `http://localhost:8080/docs` and the CLI is ready via
-`bun run cli`. You bring one key (the model); SearXNG and patchright do the web work for free. The
-service URLs are automatic (`localhost:8888` / `localhost:9223`); you never set them. Paid providers
-are extensions you only reach when the free rungs miss.
-
-Prefer to drive it yourself? `bun install && cp .env.example .env && docker compose up -d` (that
-last command starts SearXNG + the API and **pulls** the prebuilt patchright image from GHCR — no
-local Chromium build), then edit `.env`.
-
-**Required** — one key, the model brain:
+**Required:**
 
 | Variable | What it's for | Get one |
 |---|---|---|
-| `OPENROUTER_API_KEY` | Drives any model (DeepSeek default — cheap; Claude/GPT/Llama per run) | [openrouter.ai/keys](https://openrouter.ai/keys) |
+| `OPENROUTER_API_KEY` | The model (DeepSeek default; any OpenRouter model per run) | [openrouter.ai/keys](https://openrouter.ai/keys) |
 
-**Paid extensions** — optional; each only fires when the free rung above it misses:
+**Optional** — each key just enables its rung or tool:
 
-| Variable | Default | What it adds |
-|---|---|---|
-| `EXA_API_KEY` | – | Paid search fallback after SearXNG (also lets you skip Docker — see below) |
-| `TAVILY_API_KEY` | – | Last-resort search rung + the live `fetch_page` fallback |
-| `APIFY_API_TOKEN` | – | Enables the `linkedin_*` tools (profiles, posts, company data) |
-| `EVOMI_*` · `CAPSOLVER_API_KEY` | – | Residential proxy + captcha solver for the toughest anti-bot pages |
-| `OPENCLAY_MODEL` | `deepseek/deepseek-chat` | Default model id (override per run with `--model`); pick a cost/intelligence tier in `docs/decisions.md` (Model tiering) |
-| `TAVILY_USD_PER_CREDIT` | `0.008` | Tunes the cost report to your Tavily plan |
-| `PORT` | `8080` | Port for the HTTP API (`bun run api`) |
+| Variable | What it adds |
+|---|---|
+| `EXA_API_KEY` | Paid search fallback (and the no-Docker path) |
+| `TAVILY_API_KEY` | Last-resort search rung + live `fetch_page` fallback |
+| `APIFY_API_TOKEN` | `linkedin_*` and `crunchbase_company` enrichment tools |
+| `EVOMI_*` · `CAPSOLVER_API_KEY` | Residential proxy + captcha solver for the hardest pages |
+| `OPENCLAY_MODEL` | Default model id (per-run override: `--model`) |
+| `OPENCLAY_DEBUG` | `1` = detailed stderr trace (rung timings, errors, cache, LLM calls) |
 
-> **No-Docker quick try:** set `EXA_API_KEY` and skip `docker compose` — Exa does search and the
-> built-in `impit` rung does fetch, zero infra. Fast to start, but you pay Exa per search; add
-> the free stack to make runs (nearly) free.
-
-The ladders try the cheapest configured rung first and fall through only on miss/fail — an
-unset key is a skipped rung, never an error.
+The full list, including per-actor overrides and cache tuning, is in `.env.example`.
 
 ## Use it: CLI
-
-The CLI is the quickest way in. Setup links it globally, so `openclaygent` works from any
-directory (equivalent to `bun run cli --` inside the repo). With `--json` it prints a clean
-result to stdout (warnings go to stderr), so it pipes straight into whatever you're building —
-a shell script, a cron job, or an agent that shells out for a typed, cited answer.
 
 ```bash
 openclaygent --json \
@@ -127,16 +102,14 @@ openclaygent --json \
 #     "sources": [...], "cost": {...}, "model": "deepseek/deepseek-chat" }
 ```
 
-Batch a list with `--rows leads.csv --out enriched.json`, and skip rows that don't qualify
-with `--require domain` before a token is spent. Full flags: `bun run cli -- --help`.
+`--json` prints clean JSON to stdout (warnings to stderr), so it pipes into scripts and
+agents. Batch with `--rows leads.csv --out enriched.json`; skip unqualified rows with
+`--require domain`. Full flags: `openclaygent --help`.
 
 ## Use it: HTTP API
 
-The same engine over the wire, so any service or workflow can call it. `bun run api` serves
-`POST /run`, with interactive docs at `/docs`.
-
 ```bash
-bun run api    # :8080
+bun run api    # :8080, interactive docs at /docs
 curl -s localhost:8080/run -H 'content-type: application/json' -d '{
   "instructions": "Identify which CRM the company uses.",
   "template": "Company: {{company}} ({{domain}})",
@@ -145,22 +118,20 @@ curl -s localhost:8080/run -H 'content-type: application/json' -d '{
 }'
 ```
 
-See `docs/architecture.md` (HTTP API) for the full request/response shape.
+Full request/response shape: `docs/architecture.md` (HTTP API).
 
 ## Uninstall
 
-One command removes everything — containers, images, the global `openclaygent` link, and the
-install directory (your `~/.zshrc` keys are left alone):
-
 ```bash
-~/openclaygent/uninstall.sh          # or: curl -fsSL <raw>/uninstall.sh | bash
+~/openclaygent/scripts/uninstall.sh    # or: curl -fsSL <raw>/scripts/uninstall.sh | bash
 ```
 
-It asks to confirm; pass `-y` (or `OPENCLAYGENT_YES=1`) to skip the prompt.
+Removes containers, images, the global link, and the install directory; leaves your
+`~/.zshrc` keys alone. Confirms first (`-y` to skip).
 
 ## Docs
 
-- `docs/walkthrough.md` — a plain-language tour of the whole flow and *why* each step works the way it does. Start here.
-- `docs/architecture.md` — how it works: the action, the loop, the contract, the file map.
+- `docs/walkthrough.md` — the flow and why each step works the way it does. Start here.
+- `docs/architecture.md` — the mechanism: action, loop, contract, file map.
 - `docs/decisions.md` — the non-obvious choices and the conventions that bite.
 - `docs/roadmap.md` — what's shipped and what's next.

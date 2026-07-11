@@ -17,9 +17,9 @@ fi
 cd "${DIR}"
 
 if [ -e /dev/tty ]; then
-  exec ./setup.sh < /dev/tty
+  exec ./scripts/setup.sh < /dev/tty
 else
   echo "No terminal detected for interactive key prompts - running non-interactive."
-  echo "After it finishes, edit ${DIR}/.env and run ./setup.sh again."
-  exec ./setup.sh
+  echo "After it finishes, edit ${DIR}/.env and run ./scripts/setup.sh again."
+  exec ./scripts/setup.sh
 fi
