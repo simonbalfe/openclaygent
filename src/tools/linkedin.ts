@@ -1,7 +1,6 @@
 import { z } from "zod";
-import type { Cache } from "../core/cache.ts";
 import { apifyTool } from "./apify.ts";
-import type { Sink } from "./sink.ts";
+import type { RunContext } from "./sink.ts";
 
 const LINKEDIN_URL = /^https?:\/\/([\w-]+\.)*linkedin\.com\//i;
 const COMPANY_URL = /linkedin\.com\/company\//i;
@@ -80,8 +79,8 @@ interface RawCompany {
   locations?: { city?: string; geographicArea?: string; country?: string; headquarter?: boolean }[];
 }
 
-export function linkedinTools(sink: Sink, cache: Cache) {
-  const linkedin_profile = apifyTool(sink, cache, {
+export function linkedinTools(context: RunContext) {
+  const linkedin_profile = apifyTool(context, {
     id: "linkedin_profile",
     description:
       "Get a person's LinkedIn profile as structured data (name, headline, location, about, experience, follower count). Use for LinkedIn facts instead of fetching linkedin.com pages, which are login-walled. Costs credits — call once per person.",
@@ -117,7 +116,7 @@ export function linkedinTools(sink: Sink, cache: Cache) {
     sourceUrl: (p) => p.linkedinUrl,
   });
 
-  const linkedin_posts = apifyTool(sink, cache, {
+  const linkedin_posts = apifyTool(context, {
     id: "linkedin_posts",
     description:
       "Get the recent LinkedIn posts of a person or company profile: text, date, engagement counts, post URLs. Costs credits per post — keep maxPosts small.",
@@ -149,7 +148,7 @@ export function linkedinTools(sink: Sink, cache: Cache) {
     sourceUrl: (p) => p.url,
   });
 
-  const linkedin_post_reactions = apifyTool(sink, cache, {
+  const linkedin_post_reactions = apifyTool(context, {
     id: "linkedin_post_reactions",
     description:
       "Get who reacted to a LinkedIn post: reaction type plus each person's name, position, and profile URL. Costs credits per reaction — keep maxReactions small.",
@@ -175,7 +174,7 @@ export function linkedinTools(sink: Sink, cache: Cache) {
     view: (r) => ({ title: r.name, url: r.linkedinUrl, preview: `${r.type} · ${r.position}` }),
   });
 
-  const linkedin_find_people = apifyTool(sink, cache, {
+  const linkedin_find_people = apifyTool(context, {
     id: "linkedin_find_people",
     description:
       "Find people at a company via LinkedIn employee search, filtered by job title. Returns name, title, location, profile URL, and (when findEmails is true) a work email if one can be found. Costs credits per profile and 3x with emails — keep maxItems small and filter by title.",
@@ -232,7 +231,7 @@ export function linkedinTools(sink: Sink, cache: Cache) {
     sourceUrl: (p) => p.linkedinUrl,
   });
 
-  const linkedin_company = apifyTool(sink, cache, {
+  const linkedin_company = apifyTool(context, {
     id: "linkedin_company",
     description:
       "Get a company's LinkedIn profile as structured data: exact employee count, size range, industry, founded year, headquarters, follower count, website, and description. Use for firmographic facts (headcount, industry, HQ) instead of fetching linkedin.com pages, which are login-walled. Pass the exact COMPANY NAME and let the tool resolve the page — never guess or construct a /company/<slug> URL, as the wrong slug returns a stale decoy page. Only pass a URL if it appeared verbatim in a web_search result. Costs credits — call once per company.",

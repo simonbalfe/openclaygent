@@ -1,7 +1,6 @@
 import { z } from "zod";
-import type { Cache } from "../core/cache.ts";
 import { apifyTool } from "./apify.ts";
-import type { Sink } from "./sink.ts";
+import type { RunContext } from "./sink.ts";
 
 const DEFAULT_ACTOR = "parseforge~crunchbase-scraper";
 const ORG_URL = /crunchbase\.com\/organization\//i;
@@ -39,8 +38,8 @@ function nameOf(x: { name?: string } | string | undefined): string {
   return typeof x === "string" ? x : (x?.name ?? "");
 }
 
-export function crunchbaseTools(sink: Sink, cache: Cache) {
-  const crunchbase_company = apifyTool(sink, cache, {
+export function crunchbaseTools(context: RunContext) {
+  const crunchbase_company = apifyTool(context, {
     id: "crunchbase_company",
     description:
       "FALLBACK ONLY. Get a company's Crunchbase funding & firmographics as structured data — total funding, latest round (type, amount, date), investors, founders, employee range, HQ, founded year, IPO status. Crunchbase is bot-walled, so call this ONLY after web_search has failed to pin the funding/firmographic facts from open sources. Costs Apify credits — call at most once per company. Pass the crunchbase.com/organization URL if one appeared in search results, otherwise the exact company name.",

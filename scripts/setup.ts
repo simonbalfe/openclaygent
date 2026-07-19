@@ -169,7 +169,7 @@ function main(): void {
       "\nStart everything now — free search + fetch stack AND the API server (docker compose up -d)? [Y/n]",
     );
     if (start === null || start.trim().toLowerCase() !== "n") {
-      stackUp = run(["docker", "compose", "up", "-d", "--build"]) === 0;
+      stackUp = run(["docker", "compose", "up", "-d"]) === 0;
     }
   }
 

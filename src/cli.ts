@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import { HELP, parseArgs } from "./cli/args.ts";
 import { buildOptions, loadActionSpec, loadRows } from "./cli/input.ts";
-import { money, printRow } from "./cli/render.ts";
+import { printRow } from "./cli/render.ts";
 import { buildAction } from "./core/action.ts";
 import { runTable } from "./core/engine.ts";
 import type { Row } from "./core/types.ts";
@@ -30,12 +30,11 @@ if (flags.json) {
     (acc, r) => ({
       input: acc.input + r.tokens.input,
       output: acc.output + r.tokens.output,
-      cost: acc.cost + r.cost.total,
     }),
-    { input: 0, output: 0, cost: 0 },
+    { input: 0, output: 0 },
   );
   console.log(
-    `\n${rows.length} rows · ${money(totals.cost)} · ${totals.input} in / ${totals.output} out tok · ${results[0]?.model}`,
+    `\n${rows.length} rows · ${totals.input} in / ${totals.output} out tok · ${results[0]?.model}`,
   );
 } else {
   results.forEach((r, i) => {

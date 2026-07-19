@@ -20,8 +20,10 @@ fi
 
 if command -v docker >/dev/null 2>&1; then
   [ -f "${DIR}/docker-compose.yml" ] && (cd "${DIR}" && docker compose down -v --remove-orphans >/dev/null 2>&1) || true
-  docker rmi -f openclaygent-api openclaygent-patchright >/dev/null 2>&1 || true
-  imgs="$(docker images -q ghcr.io/simonbalfe/openclaygent-patchright 2>/dev/null | sort -u)"
+  imgs="$(docker images -q \
+    ghcr.io/simonbalfe/openclaygent \
+    ghcr.io/simonbalfe/openclaygent-patchright \
+    ghcr.io/simonbalfe/openclaygent-searxng 2>/dev/null | sort -u)"
   [ -n "${imgs}" ] && docker rmi -f ${imgs} >/dev/null 2>&1 || true
 fi
 

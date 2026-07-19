@@ -19,33 +19,50 @@ interface StepResult {
   trail?: string[];
 }
 
-export interface AgentStep {
-  type: "search" | "fetch" | "linkedin" | "crunchbase" | "answer";
-  query?: string;
-  urls?: string[];
-  via?: string;
-  resultCount?: number;
-  results?: StepResult[];
-  trail?: string[];
-  cost?: number;
-  cached?: boolean;
+interface SearchStep {
+  type: "search";
+  query: string;
+  via: string;
+  resultCount: number;
+  results: StepResult[];
+  trail: string[];
 }
 
-export interface RunCost {
-  total: number;
-  llm: number;
-  tools: number;
-  byProvider: { openrouter: number; exa: number; apify: number; tavily: number };
-  tavilyCredits: number;
+interface FetchStep {
+  type: "fetch";
+  urls: string[];
+  resultCount: number;
+  results: StepResult[];
+}
+
+interface ProviderStep {
+  type: "linkedin" | "crunchbase";
+  query: string;
+  resultCount: number;
+  results: StepResult[];
+}
+
+interface AnswerStep {
+  type: "answer";
+}
+
+export type AgentStep = SearchStep | FetchStep | ProviderStep | AnswerStep;
+export type ToolStepType = ProviderStep["type"];
+
+export interface Evidence {
+  tool: "search" | "fetch" | "linkedin" | "crunchbase";
+  url: string;
+  text: string;
+  via?: string;
 }
 
 export interface RunResult<S extends z.ZodType> {
+  runId: string;
   result: z.infer<S> | null;
   reasoning: string | null;
   sources: string[];
   agentLog: AgentStep[];
   tokens: { input: number; output: number };
-  cost: RunCost;
   durationMs: number;
   model: string;
   skipped?: boolean;

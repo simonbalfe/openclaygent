@@ -1,20 +1,36 @@
-import type { CostAccumulator } from "../core/cost.ts";
-import type { AgentStep } from "../core/types.ts";
+import type { AgentStep, Evidence } from "../core/types.ts";
 
-export interface Sink {
+interface UrlLedger {
   sources: Set<string>;
   seen: Set<string>;
-  log: AgentStep[];
+}
+
+interface RunTrace {
+  events: AgentStep[];
   onStep?: (step: AgentStep) => void;
-  cost: CostAccumulator;
 }
 
-export function record(sink: Sink, step: AgentStep): void {
-  sink.log.push(step);
-  sink.onStep?.(step);
+export interface RunContext {
+  runId: string;
+  urls: UrlLedger;
+  evidence: Evidence[];
+  trace: RunTrace;
 }
 
-export function normalizeUrl(url: string): string {
+export function createRunContext(runId: string, onStep?: (step: AgentStep) => void): RunContext {
+  return { runId, urls: { sources: new Set(), seen: new Set() }, evidence: [], trace: { events: [], onStep } };
+}
+
+export function record(context: RunContext, step: AgentStep): void {
+  context.trace.events.push(step);
+  context.trace.onStep?.(step);
+}
+
+export function recordEvidence(context: RunContext, evidence: Evidence): void {
+  context.evidence.push(evidence);
+}
+
+function normalizeUrl(url: string): string {
   try {
     const u = new URL(url);
     const host = u.host.replace(/^www\./i, "").toLowerCase();
@@ -25,16 +41,16 @@ export function normalizeUrl(url: string): string {
   }
 }
 
-export function noteUrl(sink: Sink, url: string): void {
-  if (url) sink.seen.add(normalizeUrl(url));
+export function noteUrl(context: RunContext, url: string): void {
+  if (url) context.urls.seen.add(normalizeUrl(url));
 }
 
-export function isVerifiedUrl(sink: Sink, url: string): boolean {
-  return sink.seen.has(normalizeUrl(url));
+function isVerifiedUrl(context: RunContext, url: string): boolean {
+  return context.urls.seen.has(normalizeUrl(url));
 }
 
-export function assertVerifiedUrl(sink: Sink, url: string, hint: string): void {
-  if (!isVerifiedUrl(sink, url))
+export function assertVerifiedUrl(context: RunContext, url: string, hint: string): void {
+  if (!isVerifiedUrl(context, url))
     throw new Error(
       `Refusing the URL "${url}": it did not come from a web_search result, a page you already fetched, or this row's input. Never guess or construct URLs. ${hint}`,
     );
@@ -42,8 +58,8 @@ export function assertVerifiedUrl(sink: Sink, url: string, hint: string): void {
 
 const URL_IN_TEXT = /https?:\/\/[^\s)<>"'\]]+/g;
 
-export function noteUrlsInText(sink: Sink, text: string): void {
-  for (const match of text.matchAll(URL_IN_TEXT)) noteUrl(sink, match[0].replace(/[.,;:]+$/, ""));
+export function noteUrlsInText(context: RunContext, text: string): void {
+  for (const match of text.matchAll(URL_IN_TEXT)) noteUrl(context, match[0].replace(/[.,;:]+$/, ""));
 }
 
 export function clip(text: string, max = 180): string {

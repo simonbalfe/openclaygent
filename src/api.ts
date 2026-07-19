@@ -21,33 +21,18 @@ const RunRequest = z
     model: z.string().optional(),
     maxSteps: z.number().int().positive().optional(),
     concurrency: z.number().int().positive().optional(),
-    fast: z
-      .boolean()
-      .optional()
-      .openapi({ description: "Skip the slow anti-bot fetch rungs (proxy, solver) to cap page latency." }),
     require: z.string().optional().openapi({ description: "Skip any row missing this field." }),
   })
   .openapi("RunRequest");
 
 const RunResultSchema = z
   .object({
+    runId: z.string(),
     result: z.unknown(),
     reasoning: z.string().nullable(),
     sources: z.array(z.string()),
     agentLog: z.array(z.unknown()),
     tokens: z.object({ input: z.number(), output: z.number() }),
-    cost: z.object({
-      total: z.number(),
-      llm: z.number(),
-      tools: z.number(),
-      byProvider: z.object({
-        openrouter: z.number(),
-        exa: z.number(),
-        apify: z.number(),
-        tavily: z.number(),
-      }),
-      tavilyCredits: z.number(),
-    }),
     durationMs: z.number(),
     model: z.string(),
     skipped: z.boolean().optional(),
@@ -83,7 +68,6 @@ app.openapi(runRoute, async (c) => {
   if (body.model) opts.model = body.model;
   if (body.maxSteps) opts.maxSteps = body.maxSteps;
   if (body.concurrency) opts.concurrency = body.concurrency;
-  if (body.fast) opts.fast = true;
   const results = await runTable(action, rows, opts);
   return c.json({ results }, 200);
 });

@@ -1,6 +1,7 @@
 services:
   api:
-    build: .
+    image: ghcr.io/simonbalfe/openclaygent:latest
+    pull_policy: always
     entrypoint: ["bun", "run", "src/api.ts"]
     container_name: openclaygent-api
     env_file: .env
@@ -18,7 +19,8 @@ services:
     restart: unless-stopped
 
   claygent:
-    build: .
+    image: ghcr.io/simonbalfe/openclaygent:latest
+    pull_policy: always
     profiles: ["cli"]
     env_file: .env
     environment:
@@ -32,8 +34,7 @@ services:
 
   patchright:
     image: ghcr.io/simonbalfe/openclaygent-patchright:latest
-    build: ./patchright
-    pull_policy: missing
+    pull_policy: always
     container_name: openclaygent-patchright
     ports:
       - "9223:9223"
@@ -50,19 +51,16 @@ services:
     restart: unless-stopped
 
   searxng:
-    image: searxng/searxng:latest
+    image: ghcr.io/simonbalfe/openclaygent-searxng:latest
+    pull_policy: always
     container_name: openclaygent-searxng
     ports:
       - "8888:8080"
-    volumes:
-      - ./searxng/settings.yml:/etc/searxng/settings.template.yml:ro
-      - ./searxng/entrypoint.sh:/searxng-wrapper.sh:ro
     environment:
       - SEARXNG_SECRET=${SEARXNG_SECRET:-openclaygent-local-dev}
       - EVOMI_USERNAME=${EVOMI_USERNAME:-}
       - EVOMI_PASSWORD=${EVOMI_PASSWORD:-}
       - EVOMI_GATEWAY=${EVOMI_GATEWAY:-}
-    entrypoint: ["/bin/sh", "/searxng-wrapper.sh"]
     healthcheck:
       test: ["CMD", "wget", "-qO", "/dev/null", "http://localhost:8080/healthz"]
       interval: 5s

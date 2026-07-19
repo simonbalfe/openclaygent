@@ -1,8 +1,7 @@
-import type { Cache } from "../core/cache.ts";
 import { fetchPageTool } from "./fetch.ts";
 import { webSearchTool } from "./search.ts";
-import type { Sink } from "./sink.ts";
+import type { RunContext } from "./sink.ts";
 
-export function webTools(sink: Sink, cache: Cache, fast = false) {
-  return { web_search: webSearchTool(sink, cache), fetch_page: fetchPageTool(sink, cache, fast) };
+export function webTools(context: RunContext) {
+  return { web_search: webSearchTool(context), fetch_page: fetchPageTool(context) };
 }

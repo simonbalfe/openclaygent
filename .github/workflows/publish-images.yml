@@ -1,0 +1,124 @@
+name: publish-images
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    tags: ["v*"]
+    paths:
+      - "Dockerfile"
+      - "bun.lock"
+      - "package.json"
+      - "src/**"
+      - "packages/open-search/**"
+      - "packages/open-extract/**"
+      - ".github/workflows/publish-images.yml"
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      app: ${{ steps.filter.outputs.app }}
+      searxng: ${{ steps.filter.outputs.searxng }}
+      patchright: ${{ steps.filter.outputs.patchright }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            app:
+              - "Dockerfile"
+              - "bun.lock"
+              - "package.json"
+              - "src/**"
+              - "packages/open-search/package.json"
+              - "packages/open-search/src/**"
+              - "packages/open-extract/package.json"
+              - "packages/open-extract/src/**"
+              - ".github/workflows/publish-images.yml"
+            searxng:
+              - "packages/open-search/searxng/**"
+              - ".github/workflows/publish-images.yml"
+            patchright:
+              - "packages/open-extract/patchright/**"
+              - ".github/workflows/publish-images.yml"
+
+  publish:
+    name: ${{ matrix.name }}
+    needs: changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: openclaygent
+            image: openclaygent
+            change: app
+            context: .
+            file: Dockerfile
+          - name: openclaygent-searxng
+            image: openclaygent-searxng
+            change: searxng
+            context: packages/open-search/searxng
+            file: packages/open-search/searxng/Dockerfile
+          - name: openclaygent-patchright
+            image: openclaygent-patchright
+            change: patchright
+            context: packages/open-extract/patchright
+            file: packages/open-extract/patchright/Dockerfile
+    steps:
+      - id: select
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          GIT_REF: ${{ github.ref }}
+          CHANGED: ${{ needs.changes.outputs[matrix.change] }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] || [[ "$GIT_REF" == refs/tags/* ]] || [ "$CHANGED" = "true" ]; then
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.select.outputs.publish == 'true'
+
+      - uses: docker/setup-qemu-action@v3
+        if: steps.select.outputs.publish == 'true'
+
+      - uses: docker/setup-buildx-action@v3
+        if: steps.select.outputs.publish == 'true'
+
+      - uses: docker/login-action@v3
+        if: steps.select.outputs.publish == 'true'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        if: steps.select.outputs.publish == 'true'
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,format=short
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+
+      - uses: docker/build-push-action@v6
+        if: steps.select.outputs.publish == 'true'
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.file }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}

@@ -67,7 +67,6 @@ export function buildOptions(flags: Flags): RunOptions {
     const n = Number(flags.concurrency);
     if (Number.isFinite(n)) opts.concurrency = n;
   }
-  if (flags.fast) opts.fast = true;
   opts.onStep = (s) =>
     formatStep(s, Boolean(flags.verbose)).forEach((line) =>
       console.error(line.startsWith(" ") ? `    ${line}` : `  › ${line}`),

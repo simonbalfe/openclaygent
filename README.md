@@ -28,7 +28,7 @@ an unset key is a skipped rung, never an error. You pay only when the free rungs
 
 ```mermaid
 flowchart TB
-  A(["Agent loop · reason → act → observe"]) --> OUT(["Typed, cited JSON · sources · cost"])
+  A(["Agent loop · reason → act → observe"]) --> OUT(["Typed, cited JSON · sources · trace"])
   A -. web_search .-> S1
   A -. fetch_page .-> F1
 
@@ -50,8 +50,7 @@ flowchart TB
   class S2,S3,F3,F4,F5 paid
 ```
 
-Green = free, amber = paid. `RunResult.cost` meters the LLM, Exa, Apify, and Tavily; the
-Evomi proxy and CapSolver fallback bill on their own accounts.
+Green = local, amber = external. The trace records which provider handled each step.
 
 ## Setup
 
@@ -61,13 +60,13 @@ One line from nothing:
 curl -fsSL https://raw.githubusercontent.com/simonbalfe/openclaygent/main/scripts/install.sh | bash
 ```
 
-It clones the repo, installs Bun and deps, creates `.env`, prompts for keys (only
-OpenRouter is required), and starts the free search + fetch stack plus the API via Docker.
+It clones the repo, installs Bun for the native CLI, creates `.env`, prompts for keys (only
+OpenRouter is required), and pulls the published API, search, and fetch images from GHCR.
 When it finishes: API at `http://localhost:8080/docs`, CLI available globally as
 `openclaygent`.
 
 - Already cloned? `bun run setup`
-- Manual instead: `bun install && cp .env.example .env && docker compose up -d`, then edit `.env`
+- Manual instead: `cp .env.example .env && docker compose up -d`, then edit `.env`
 - No Docker? Set `EXA_API_KEY` and skip compose — Exa searches, the built-in `impit` rung
   fetches. Zero infra, but you pay per search.
 
@@ -86,9 +85,9 @@ When it finishes: API at `http://localhost:8080/docs`, CLI available globally as
 | `APIFY_API_TOKEN` | `linkedin_*` and `crunchbase_company` enrichment tools |
 | `EVOMI_*` · `CAPSOLVER_API_KEY` | Residential proxy + captcha solver for the hardest pages |
 | `OPENCLAY_MODEL` | Default model id (per-run override: `--model`) |
-| `OPENCLAY_DEBUG` | `1` = detailed stderr trace (rung timings, errors, cache, LLM calls) |
+| `OPENCLAY_DEBUG` | `1` = detailed stderr trace (rung timings, errors, and LLM calls) |
 
-The full list, including per-actor overrides and cache tuning, is in `.env.example`.
+The full list, including per-actor overrides, is in `.env.example`.
 
 ## Use it: CLI
 
@@ -105,11 +104,10 @@ openclaygent \
 
 By default stdout is just the answer — the schema-shaped `result` plus a one-line
 `reasoning` and the `sources` behind it (live step trace goes to stderr), so it pipes
-straight into scripts and agents. `--json` adds the full envelope — agent log, exact cost,
+straight into scripts and agents. `--json` adds the full envelope with agent log and
 tokens; `--pretty` is a human table. Batch with
 `--rows leads.csv --out enriched.json`; skip unqualified rows with `--require domain`; add
-`--fast` to cap page latency (fetch skips the slow anti-bot rungs — hard-walled pages come
-back empty instead of taking minutes). Full flags: `openclaygent --help`.
+Full flags: `openclaygent --help`.
 
 ## Use it: HTTP API
 
@@ -136,6 +134,7 @@ Removes containers, images, the global link, and the install directory; leaves y
 
 ## Docs
 
+- `docs/usage-guide.md` — copy-paste examples for single rows, CSV batches, reusable actions, schemas, API calls, and troubleshooting.
 - `docs/architecture.md` — the mechanism: action, loop, contract, file map. Start here.
 - `docs/decisions.md` — the non-obvious choices and the conventions that bite.
 - `docs/roadmap.md` — what's shipped and what's next.

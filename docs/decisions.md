@@ -25,8 +25,7 @@ structuredOutput: { schema: action.output, model: provider.chat(model) }
 ```
 
 The structuring model comes from the **same per-run OpenRouter provider** as the agent
-(`buildAgent` returns `{ agent, provider }`), so the cost-tap (see Cost accounting) meters
-the structuring call too.
+(`buildAgent` returns `{ agent, provider }`).
 
 Passing only `{ schema }` forces a single structured generation pass that **disables
 tool-calling**. The agent then answers from parametric memory and never searches. The
@@ -114,11 +113,12 @@ What does NOT work, and why the fallback is a separate pass:
   reasoning cannot be disabled per call ("Reasoning is mandatory for this endpoint").
 
 So the fallback is a clean single-turn call (`buildFinalizer`, `src/core/agent.ts`): a
-tools-less agent gets the findings serialized from `sink.log` (`serializeFindings`) as plain
-text and is forced to emit the schema from those alone. Single-turn → no broken reasoning
+tools-less agent gets the full bounded tool evidence serialized from `RunContext.evidence`
+(`serializeEvidence`) as plain text and is forced to emit the schema from those alone. The
+agent trace is intentionally preview-only and is never used as finalizer input. Single-turn → no broken reasoning
 history; no tools → it must answer instead of searching more. Its output cap is raised
 (`FINALIZE_MAX_TOKENS`, 4000) so mandatory reasoning has headroom before the JSON. The
-fallback never fires on the happy path, so it adds zero cost when the loop answers normally.
+fallback never fires on the happy path, so it adds no extra model call when the loop answers normally.
 
 `structuredOutput` is passed `errorStrategy: "warn"` — Mastra's own control for a schema
 validation failure (`'strict' | 'warn' | 'fallback'`, default `'strict'`). The default
@@ -133,7 +133,7 @@ what it already checked).
 row can throw — a provider 5xx/429/auth error, a network drop, an Apify timeout inside a
 tool — still rejects the `run` promise. The catch lives in `runTable`'s worker, not inside
 `run`: each row is wrapped, and a throw becomes a failed `RunResult` (`result: null`,
-`error` set, zero cost/tokens, real `durationMs`) instead of rejecting `Promise.all`. Why
+`error` set, zero tokens, real `durationMs`) instead of rejecting `Promise.all`. Why
 this matters: the headline use is a big batch, and without isolation one transient blip on
 row 7 would discard rows 1–500. Keeping the catch in `runTable` (not `run`) leaves a lone
 `run` call free to throw for a caller that wants the exception, while every batch path (CLI
@@ -143,143 +143,16 @@ retry yet — a thrown row is reported, not re-attempted (see roadmap, retry/bac
 ## Per-run tools and the Sink
 
 Tools are built fresh inside each `run` and closed over a `Sink`
-(`{ sources, seen, log, cost, onStep? }`) rather than reading/writing module-level state. This
-keeps concurrent runs isolated and lets `RunResult` report exactly the URLs, steps, and
-spend that this run produced. `sink.cost` (`CostAccumulator` in `src/core/cost.ts`) is the
-single place every provider's spend lands during a run. `sink.seen` is the URL-provenance
+(`{ sources, seen, log, onStep? }`) rather than reading/writing module-level state. This
+keeps concurrent runs isolated and lets `RunResult` report exactly the URLs and steps that
+this run produced. `sink.seen` is the URL-provenance
 set (see "No fabricated URLs"): `sources` is what the run reported, `seen` is what the run
 is allowed to open.
 
-## Cost accounting: exact per-provider, no estimates
-
-`RunResult.cost` (`RunCost` in `src/core/types.ts`) reports real dollars, not a price-table
-guess. Every figure comes from the provider's own reporting. Each paid tool step also
-carries its own USD on `agentLog[].cost`; self-hosted rungs (SearXNG, impit, patchright)
-are $0.
-
-- **OpenRouter (LLM)** — the per-run provider (`buildOpenRouter`, `src/core/agent.ts`) is
-  created with `extraBody: { usage: { include: true } }` and a `fetch` wrapper (`tapCost`)
-  that reads `usage.cost` off **every** response and adds it to `sink.cost.openrouter`.
-  This is why the provider is per-run and shared by both the agent and the structuring
-  model: the tap is the only thing that sees the separate structuring call, which is **not**
-  in `res.steps` — summing step costs would silently undercount. Responses are JSON or SSE
-  (`text/event-stream`); `extractCostUsd` handles both (regex the last `"cost":` in a
-  stream, `usage.cost` in JSON). The tap reads `res.clone()` so Mastra still gets the body.
-- **Exa** — `costDollars.total` on every `search`/`getContents` response (exact USD).
-- **Apify** — the run's `usageTotalUsd`. The sync `run-sync-get-dataset-items` endpoint
-  returns only dataset items (no run id, no cost), so `runActor` (`src/tools/linkedin.ts`)
-  uses the async pattern instead: start the run, poll `actor-runs/{id}?waitForFinish=30`
-  until terminal, then read `usageTotalUsd` and fetch the dataset items.
-- **Tavily** — `includeUsage: true` returns exact `usage.credits` (Tavily bills in credits,
-  never dollars). USD = `credits × TAVILY_USD_PER_CREDIT` (env, default `0.008` = the PAYG
-  rate); `tavilyCredits` is also kept on `RunCost` so the raw credit count survives.
-
-## Per-table cache: per-run only, single-flight, cost on the miss
-
-`src/core/cache.ts` is a tiny in-memory cache (`createCache` → `getOrCompute(ns, key, fn)`).
-`runTable` makes **one** instance and threads it through every `run` → `buildAgent` →
-`webTools`, so all rows of a table share it; a lone `run` gets its own throwaway cache. It
-backs `web_search` (key `query|max_results`), `fetch_page` (key `normalizeUrl(url)`), and
-every Apify-backed tool via `runActorCached` (key `actor|JSON.stringify(input)`) — the
-linkedin_* and crunchbase_company tools MUST go through it, never call `runActor` directly
-from a tool. The model repeats identical tool calls despite prompt rules against it (both
-across steps and as parallel calls inside one step, which execute before any result lands
-in context), and each bare `runActor` repeat re-bills Apify: one observed single-row run
-fired `linkedin_company` 7x and `crunchbase_company` 6x, $0.03 of pure waste. The cache is
-the deterministic guard the prompt cannot be. Empty actor results ride the same L1
-memoization (the promise stays in the map; `cacheable` only gates the L2 write), so a
-0-item lookup also stops re-billing.
-Four choices that bite if you change them:
-
-- **Per-run scope, never cross-run.** The cache lives only for one `runTable` call, then is
-  dropped. A run is "now", so reuse inside it can't serve stale data — which keeps the
-  live-not-stale stance that already rejected Exa `/contents` as a fetch rung (see Fetch
-  ladder). A persistent / cross-process backend (Redis) is a deliberate later layer behind
-  the same `Cache` interface, not this.
-- **Single-flight: store the promise, not the value.** `getOrCompute` puts the in-flight
-  promise in the map immediately, so concurrent rows asking for the same URL collapse onto
-  one ladder walk instead of all missing at once (`runTable` runs rows concurrently). It
-  returns `{ computed, value }` — `computed` is true only for the call that actually ran
-  `fn`; concurrent followers and later hits get `false`.
-- **Cost counts on the miss that computed it, $0 on hits.** Each tool adds `exa`/`tavily`
-  cost to `sink.cost` only when `computed` is true, and records the step with `cached:
-  !computed`. The row that paid shows the dollars; rows that reused show $0. Sum across the
-  table stays exact — no double-count. Sources/provenance are still applied on **every**
-  call (hits included), so `noteUrl`/`sink.sources` stay correct per row.
-- **`fetch_page` caches the raw page text, before `fitToBudget`.** The BM25 reduction is
-  query-dependent, so the cache holds the full fetched markdown and each call re-runs
-  `fitToBudget` with its own `query`. Two rows fetching the same URL for different facts
-  share the one download but each gets its own relevant slice.
-- **Failures are not cached.** A throwing `fn` deletes its key so the next call retries
-  (a transient 429/timeout shouldn't poison the URL for the rest of the run).
-
-### L2: optional cross-run Postgres cache (`src/core/cache-pg.ts`)
-
-`createCache` takes an optional `Layer2` (`get`/`set`). `createCacheFromEnv` supplies a
-Postgres-backed one when `OPENCLAY_CACHE_URL` is set, else returns the L1-only cache —
-`run`/`runTable` call `createCacheFromEnv`, so the engine is unchanged whether L2 is on. On an
-L1 miss, `getOrCompute` reads L2; on an L2 miss it runs `fn`, returns it, and writes back to
-L2 (and L1). A cross-run hit reports `cached: true` (cost $0 to this run — a prior run paid),
-identical to an in-process hit.
-
-- **Storage is one generic table, not typed per-kind.** `openclay_cache(ns, key, value
-  jsonb, expires_at)`, PK `(ns, key)`, auto-created on first use. `value` is the whole tool
-  result blob. TTL via `expires_at > now()` on read; `get` is a plain `SELECT` (no hit-counter
-  write-on-read — kept minimal since nothing consumes usage stats).
-- **Default OFF, short TTL.** Unset `OPENCLAY_CACHE_URL` = no L2, which keeps the
-  live-not-stale default the whole tool is built around (the same reason Exa `/contents` was
-  rejected as a fetch rung). When on, `OPENCLAY_CACHE_TTL_SEC` defaults to 1h — keep it short;
-  a long TTL serves stale web facts.
-- **Best-effort, never fatal.** No DSN → no L2. Any DB error (unreachable, bad schema) is
-  caught: `get` returns a miss, `set` no-ops, both log to stderr. The run still completes live.
-- **jsonb double-encoding trap (Drizzle + Bun SQL).** Bun's SQL driver already JSON-encodes an
-  object param bound to a `jsonb` column, and Drizzle's `jsonb` column codec *also*
-  `JSON.stringify`s it on insert — together they store a JSON **string** (`jsonb_typeof` =
-  `string`, `value->>'k'` returns null), and reads only round-trip by luck (double parse). The
-  fix in `cache-pg.ts`: bypass the codec on write — pass the raw object through a
-  `sql\`${value}::jsonb\`` template so Bun encodes it exactly once (verified `jsonb_typeof` =
-  `object`), and use `excluded.*` in the `onConflictDoUpdate` set rather than re-binding. Reads
-  through the column decoder are fine once storage is a real object. Test against a real
-  Postgres (`tests/cache-pg.test.ts`, gated on `OPENCLAY_CACHE_URL`); a fake L2 would not catch
-  this.
-- **Only cacheable results are persisted.** `getOrCompute`'s `cacheable` predicate gates the
-  L2 write: `web_search` persists only non-empty result sets, `fetch_page` persists `ok`
-  (usable) and `dead` outcomes but never `transient` (see Status-aware negative cache).
-- **TTL can depend on the value.** `opts.ttlMs` may be a function of the result, returning
-  `undefined` to fall back to the cache's default (`OPENCLAY_CACHE_TTL_SEC`, or 1h). This is
-  how a dead URL gets a long TTL while a normal page uses the short default — the L2 `set`
-  uses exactly the TTL it is handed (no env override at the write).
-
-### Adapted from gtm-research, not copied
-
-The cache idea (persistent, cross-run, hash-keyed, TTL'd, best-effort-optional, symmetric
-normalization) is gtm-research's (`third_party/gtm-research`). What we deliberately changed:
-
-- **One generic `jsonb` table, not their two typed tables** (`page_cache` + `search_cache`).
-  Theirs carry `fetch_count`, `content_hash`, `provider` and drive telemetry views + a
-  watchdog. We already have exact cost accounting (`cost.ts`), so the cache stays a plain blob
-  store and owns no telemetry.
-- **Cache the raw page text, not a `digest`.** They store a cheap-model-compressed digest per
-  page; we have no digest step — the per-query BM25 `fitToBudget` runs on read instead.
-- **Search key is `query|max_results`, not `rung|query`.** Their caller picks a rung; our
-  `searchWeb` is a ladder that returns whichever rung answered, so we cache the final answer.
-- **Status-aware negative cache, not failure-blind.** Like them we negative-cache dead URLs;
-  unlike a naive version we never cache a *transient* failure. `fetchLadder` returns an
-  `outcome`: `ok` | `dead` | `transient`. `impitFetch` surfaces the real HTTP status, and
-  `isDeadStatus` maps **401 / 404 / 410** to `dead` — the first rung short-circuits on those
-  (no point escalating the ladder for a page that does not exist or needs a login). **403 is
-  NOT dead**: it is usually bot-blocking, exactly what patchright + proxy + solver exist to
-  beat, so a 403 escalates; if the whole ladder still fails it ends `transient`. Timeouts,
-  5xx, network errors and unclassified empties are all `transient`. Cross-run we persist `ok`
-  (default TTL) and `dead` (`DEAD_TTL_MS`, 7 days) and drop `transient`, so a real 404 is
-  skipped for days while a flaky proxy never poisons a good URL. (`transient` is still cached
-  in L1 for the rest of the run — a dead-ish URL is walked once per run, not once per row.)
-  We diverge from gtm-research's digest-only model: the same `dead`/`transient` split rides on
-  our raw-text cache instead of their compressed digest.
-
 ## Search: SearXNG → Exa → Tavily ladder
 
-`web_search` (`src/tools/web.ts`, `SEARCH_LADDER`) walks providers cheapest-first:
+`open-search.search` (`packages/open-search/src/search.ts`) walks providers cheapest-first;
+Openclaygent's `web_search` tool is only the evidence and trace adapter:
 self-hosted SearXNG (`SEARXNG_URL`, the compose service — zero cost, aggregates
 Google/Bing/Brave/DDG), then Exa's REST API (`api.exa.ai`, `x-api-key` auth), then Tavily
 (`api.tavily.com`, Bearer auth). A rung is skipped when its env var is unset, and the
@@ -298,7 +171,8 @@ falls through to paid Exa on nearly every call. Three gotchas made this non-triv
   builds httpx transports with an explicit `proxy=`, bypassing httpx's env/mounts resolution.
   The proxy has to live in `outgoing.proxies.all://` in `settings.yml`.
 - **`settings.yml` does not interpolate `${ENV}`**, and the Evomi password must not be
-  committed. So `searxng/settings.yml` is a secret-free template; `searxng/entrypoint.sh`
+  committed. So `packages/open-search/searxng/settings.yml` is a secret-free template;
+  `packages/open-search/searxng/entrypoint.sh`
   (wired as the container `entrypoint`) appends the `proxies` block from `EVOMI_*` env at
   start, then `exec`s the stock `/usr/local/searxng/entrypoint.sh`.
 - **`outgoing.extra_proxy_timeout` must be an int** (`10`, not `10.0`) or SearXNG rejects the
@@ -314,6 +188,11 @@ means any single request can land on a Google-flagged IP:
   *within the same query*, so Google succeeds as soon as a request hits a clean residential IP.
 The Google engine code itself (user-agent / consent handling) is a moving target SearXNG
 patches in newer images, so stay current on `searxng/searxng:latest`.
+
+The install stack uses three public GHCR images: the Bun API/CLI application, the package-owned
+SearXNG configuration layered over upstream SearXNG, and Patchright with Chromium/Xvfb. A single
+monorepo workflow publishes multi-architecture SHA tags, `latest` from `main`, and semantic-version
+tags. Path filtering avoids rebuilding the expensive browser image when only application code changes.
 Result: previously-zero operator queries now return ~27 results, and Google returns ~9–10
 per query with no suspensions.
 
@@ -339,14 +218,17 @@ Tavily was added as the last rung after comparing the gtm-research waterfall (it
 free keyword pool → Exa → Tavily); it is a pure backup for when both cheaper rungs fail.
 The tools remain the swap seam — the agent and engine are unaware of the provider.
 
-## Fetch: impit → patchright (direct → +Evomi → +CapSolver) → Tavily /extract
+## Fetch: isolated `open-extract` workspace package
 
-`fetch_page` tries a local fetch first — `impit` (Chrome TLS fingerprint, so plain
-bot-checks pass). A **PDF** response (`content-type: application/pdf` or `.pdf` URL) is parsed
-to text with `unpdf` instead of the HTML path — `extract.ts` is HTML-only, so without this a
-PDF returned nothing.
+`fetch_page` is now an Openclaygent-specific adapter around the `packages/open-extract`
+workspace package, resolved through the normal `open-extract` import and `workspace:*` dependency.
+The package accepts one URL and owns impit retrieval, Patchright escalation, Tavily fallback,
+HTML/PDF handling, page-usability classification, structured-data extraction, Markdown conversion,
+and its bounded output. This repository owns the agent-facing URL guard, evidence,
+trace, and source recording. The code boundary remains one-way: Openclaygent imports
+`open-extract`; the extraction project knows nothing about Openclaygent.
 
-HTML is turned into markdown by `src/tools/extract.ts`. First `extractStructuredData` pulls
+Inside `open-extract`, HTML is turned into markdown after structured data is pulled
 the machine-readable layer (`<script type="application/ld+json">` + `<meta>`/og) and prepends a
 compact `## Page structured data` block; then the visible body is extracted **Readability-first
 with a prune fallback** — because a research agent hits both articles *and* structured pages:
@@ -407,7 +289,7 @@ self-hosted rungs:
 1. **impit** — browser-TLS HTTP, free, default.
 2. **patchright direct** — when impit fails `usable()` (under 200 chars, or under 3000 chars
    with block-page markers), `fetch_page` calls the patchright compose service
-   (`GET /fetch?url=` → rendered HTML, `patchright/server.mjs`). Real stealth Chrome (patchright
+   (`GET /fetch?url=` → rendered HTML, `packages/open-extract/patchright/server.mjs`). Real stealth Chrome (patchright
    is a drop-in Playwright fork that patches Chromium's automation tells); cracks CSR/JS-shell pages.
 3. **patchright + Evomi residential** — when the direct render is still unusable, retries with
    `&proxy=1`, routing the browser through Evomi residential (`EVOMI_*` env, a second
@@ -418,11 +300,7 @@ HTTP rather than Playwright's websocket protocol because Bun's ws client hangs a
 Playwright's server (Node connects fine); the HTTP seam also keeps `patchright` out of
 this package entirely. `PATCHRIGHT_URL` auto-defaults to the compose service at
 `http://localhost:9223` (set it empty to disable rendered fetch); the proxy and solver rungs
-still auto-skip when their env is unset (`EVOMI_*`, `CAPSOLVER_API_KEY`), and fast mode
-(CLI `--fast`, API `"fast": true`, wired through `RunOptions.fast`) skips both heavy rungs
-even when configured — the proxy/solver waits are where a blocked page burns minutes, so
-fast mode trades those pages for capped latency on bulk runs (the ladder still falls
-through to Tavily, which is paid but quick).
+still auto-skip when their env is unset (`EVOMI_*`, `CAPSOLVER_API_KEY`).
 Step log records the winning rung as `via: impit | patchright | patchright+proxy`, plus a
 per-URL `trail` naming each rung tried and why it escalated (`impit: bot-wall/shell (812c)`,
 `patchright: empty`), so an early jump to Tavily is explainable rather than silent.
@@ -465,7 +343,7 @@ rather than stale cache — the agent should note it could not verify live, not 
 The `exaSearch`/`tavilySearch` clients are still constructed once and shared with the fetch
 Tavily client.
 
-The browser runs **headed inside Xvfb** (`patchright/Dockerfile` wraps the start in `xvfb-run`,
+The browser runs **headed inside Xvfb** (`packages/open-extract/patchright/Dockerfile` wraps the start in `xvfb-run`,
 `server.mjs` launches `chromium.launch({ headless: false })`) because Cloudflare managed
 challenges detect headless at the binary level. It runs patchright's bundled patched Chromium
 (`npx patchright install --with-deps chromium`), not the Google Chrome channel — Chrome ships no
@@ -529,28 +407,15 @@ Originally there were none — at the initial size there was no drift pressure. 
 until the fetch-ladder rewrite and the fourth LinkedIn tool both landed without their doc
 updates (caught by the 2026-06 codebase audit). `.claude/settings.json` now carries the
 minimal scriptless pair: a SessionStart pointer naming which doc owns which fact, and a
-Stop prompt hook that flags a `src/`, compose, `patchright/`, or `searxng/` change landing
+Stop prompt hook that flags a `src/`, compose, `packages/open-extract/`, or `searxng/` change landing
 without its owning doc. No hook scripts to maintain. Escalate to a real pre-commit diff check only if
 drift survives the nudge.
 
-## Large pages: BM25 relevance, not a bigger cap
+## Large pages: bounded by the extraction package
 
-A long page can't be dumped into the agent (context blow-up) and can't be head-truncated
-safely (the answer might be past the cut). The fix is **retrieval, not truncation**:
-`fitToBudget` (`extract.ts`) only triggers when the cleaned markdown exceeds `PAGE_CAP`, then
-splits it into chunks and keeps the **BM25-top** chunks for the agent's `query` until the
-budget is full — same token bound, but spent on the *relevant* sections instead of the *first*
-ones. Bounded by construction, answer-preserving by relevance.
-
-BM25 (lexical, ~40 lines, no deps) is deliberate over the semantic alternatives: it is free,
-local, instant, and deterministic, and for GTM fact-finding the query terms usually appear
-verbatim on the page (funding, pricing, headcount, names). An embeddings/cross-encoder
-**reranker** is the semantic upgrade for the ~20% where wording differs — but it needs a model
-(paid API or local GPU), so it is deferred until BM25 demonstrably misses. A vector DB is not
-relevant here: it indexes a large corpus for dense first-stage retrieval; one page is ~50
-chunks, so BM25 ranks them directly. Fallbacks: no `query` → head-truncate; ≤1 chunk or no
-positive BM25 hit → head-truncate. Both reduced outputs carry a trailing marker so the agent
-knows it saw a subset.
+The URL-only package applies its own fixed output window so a long page cannot expand the agent
+context without bound. Query-specific BM25 reduction was removed with the embedded extractor
+because the independent contract deliberately accepts only a URL.
 
 ## Crunchbase: a fallback-only Apify actor, not a fetch target
 
@@ -562,7 +427,7 @@ investors — gated by the tool description and the behaviour prompt, not by cod
 usually surfaces the `crunchbase.com/organization/<slug>` URL in search results even though the
 page is unfetchable, so the agent passes that URL to the actor (name-search is the secondary
 mode). It runs through the shared `runActor` (`apify.ts`), env-gated on `APIFY_API_TOKEN` like
-the LinkedIn tools, and bills via the run's `usageTotalUsd` into `sink.cost.apify`.
+the LinkedIn tools.
 
 The actor id is **`CRUNCHBASE_ACTOR` (default `parseforge~crunchbase-scraper`)** because
 third-party Crunchbase actors come and go and change their I/O contract — swapping the env var
@@ -613,7 +478,7 @@ prompt rule alone does not stop this, so the guard is in code.
 The CLI (`src/cli.ts`) and the HTTP API (`src/api.ts`) are both thin adapters over the same
 core. Each turns its own input format into an `ActionSpec` + rows + `RunOptions`, then calls
 `buildAction` (`core/action.ts`) and `runTable`. The rule that bites: action assembly,
-schema building, the agent loop, and cost accounting live in `core/`, never in a frontend.
+schema building and the agent loop live in `core/`, never in a frontend.
 If you find yourself writing `defineAction` or `buildSchema` inside `cli/` or `api.ts`,
 that logic belongs in `core/action.ts` so both paths share it. Frontends never import each
 other.

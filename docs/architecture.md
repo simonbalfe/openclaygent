@@ -17,7 +17,7 @@ flowchart LR
   ENG["Engine<br/>run / runTable"] --> AG["Agent<br/>Mastra + OpenRouter"]
   AG <-->|"web_search · fetch_page"| EXA["SearXNG · Exa · Tavily"]
   AG --> STR["Structuring model<br/>text → Zod schema"]
-  STR --> RR["RunResult<br/>result · sources · agentLog · tokens · cost"]
+  STR --> RR["RunResult<br/>result · sources · agentLog · tokens"]
   RR --> ENG
 ```
 
@@ -55,7 +55,7 @@ write every URL and step into the run's `Sink`.
 flowchart LR
   R["Reason"] --> D{"next action?"}
   D -- web_search --> WS["SearXNG → Exa → Tavily<br/>(snippets)"] --> O["Observe"]
-  D -- fetch_page --> FP["impit + pruning extractor<br/>(full page text)"] --> O
+  D -- fetch_page --> FP["open-extract package<br/>(URL → bounded Markdown)"] --> O
   O --> R
   D -- answer --> A["final text → structuring"]
   WS -.->|"record url + step"| SINK[("Sink")]
@@ -88,7 +88,7 @@ fixed, the row varies.
    marked `[MISSING:field]` and warned, not failed.
 3. **Agent loop** — a fresh Mastra agent (`src/core/agent.ts`) runs with two tools and the
    tuned research behaviour, looping reason → tool → observe until it answers. The system
-   context stacks three layers, fixed-first so prompt caching holds across rows: the
+   context stacks three layers, fixed-first for stable prompts across rows: the
    research doctrine (`BEHAVIOUR` in `src/core/agent.ts` — search/navigation/evidence/answer
    discipline, our equivalent of Claygent's hidden tuned system prompt), then the action's
    `instructions`, then the templated row task. Doctrine rules lose to action rules on
@@ -100,7 +100,7 @@ fixed, the row varies.
    finalizer (`buildFinalizer`, `src/core/agent.ts`) is handed the serialized findings from
    the run's `Sink` and forced to emit the schema from those alone. See `decisions.md`.
 6. **Return the contract** — `RunResult<S>`: `result`, `sources`, `agentLog`, `tokens`,
-   `cost`, `durationMs`, `model`.
+   `durationMs`, `model`.
 
 `runTable(action, rows, opts)` runs the loop across a whole table, returning one
 `RunResult` per row. Rows run concurrently through a fixed-size worker pool —
@@ -114,30 +114,21 @@ rather than rejecting the whole batch, so one bad row never discards the others.
 `src/tools/web.ts` builds two tools **per run**, bound to a `Sink` so every URL and step
 is recorded without global state:
 
-- `web_search(query)` — a cheapest-first provider ladder: self-hosted SearXNG
+- `web_search(query)` — a thin adapter around the framework-agnostic `packages/open-search`
+  workspace package. The package owns a cheapest-first provider ladder: self-hosted SearXNG
   (`SEARXNG_URL`, zero-cost; routes its engine scrapes through the Evomi residential proxy
   so they are not CAPTCHA-blocked — see decisions.md, Search ladder) → Exa (`EXA_API_KEY`,
   /search with inline contents) → Tavily (`TAVILY_API_KEY`). A rung is skipped when its env
   is unset and the ladder escalates when a rung throws or returns zero results; the winning
   rung is recorded as `via` on the step. Returns title/url/snippet. Snippets are usually
   enough to answer.
-- `fetch_page(urls)` — impit (browser-TLS HTTP) + the extractor
-  (`src/tools/extract.ts`: JSON-LD/meta structured data prepended, then Readability-first with a
-  Crawl4AI prune fallback — see decisions.md) renders the page as markdown for free; PDFs are
-  parsed to text via `unpdf`. When
-  the result looks like a JS shell or block page it escalates to the **patchright** compose
-  service (`PATCHRIGHT_URL`, real rendered Chrome — see decisions.md), recorded as
-  `via: patchright` in the step. When every self-hosted rung fails, one paid rung runs last —
-  **Tavily `/extract`** (`via: tavily`, official SDK), an always-live managed fetch. Exa
-  `/contents` is deliberately **not** a fetch rung: it is cache-first, which conflicts with
-  the live-data priority (see decisions.md, Fetch ladder). Capped at a bounded read window.
-  Only used when snippets are insufficient.
-
-Long pages are reduced, not blind-truncated: `fetch_page` takes an optional `query`, and when
-the cleaned markdown exceeds the cap, `fitToBudget` (`extract.ts`) chunks it and keeps the
-**BM25-top sections** for that query (lexical relevance, local, $0) instead of the first N
-chars. It only fires over-cap; small pages pass through whole; with no query it falls back to
-head-truncation. See decisions.md (Large pages).
+- `fetch_page(urls)` — a thin Openclaygent adapter around the framework-agnostic
+  `packages/open-extract` workspace package. The package accepts one
+  URL and owns impit HTTP retrieval, Patchright direct/proxy/solver escalation, optional Tavily
+  fallback, HTML/PDF detection, JSON-LD/meta extraction, Readability/pruning, Markdown conversion,
+  and the bounded read window. Openclaygent retains URL provenance, evidence capture,
+  and agent-step recording around the imported `extract(url)` call. Only used when snippets are
+  insufficient.
 
 Cheapest-first: the agent is told to prefer search snippets and only fetch when it needs a
 specific page's full text.
@@ -154,18 +145,19 @@ Every run returns `RunResult<S>` (`src/core/types.ts`):
 - `result` — the schema-shaped answer, or null (null when skipped, when both the agent
   loop and the finalization fallback failed to produce structured output, or when the row
   threw — in which case `error` carries the message).
+- `runId` — a stable identifier for correlating concurrent debug output, traces, and errors.
 - `reasoning` — one or two model-written sentences on which sources settled the answer
   (the structuring pass wraps the action's schema as `{ answer, reasoning }`, so it is
   grounded in the same findings; null whenever `result` is null).
 - `sources` — every URL the tools touched.
 - `agentLog` — ordered `AgentStep[]`, the replay log of search/fetch/answer steps. Each
   step carries `results: StepResult[]` — what the tool actually returned (title, URL,
-  preview snippet, fetched char count) — `cost` (USD for that paid tool step), and a
-  `trail` of every ladder rung attempted with the reason it escalated (search: on the
+  preview snippet, fetched char count), and a `trail` of every ladder rung attempted with the reason it escalated (search: on the
   step; fetch: per-URL on each result) — so a run is auditable after the fact and the
   cheapest-first waterfall is visible without `--verbose`.
-- `cost` — `RunCost`: exact spend for the run, `{ total, llm, tools, byProvider, tavilyCredits }`,
-  all real provider figures (never estimated). Mechanism in `decisions.md` (Cost accounting).
+- internal evidence — `RunContext` retains the full bounded text returned by each tool,
+  separately from the concise `agentLog` previews. The finalizer reads this evidence, while
+  CLI/API traces remain compact.
 - `tokens`, `durationMs`, `model` — usage and provenance.
 - `skipped?` / `error?` — set when the row was skipped by `conditionalRun`, or when its
   `run` threw and `runTable` caught it (the batch keeps going). Both absent on a normal run.
@@ -175,29 +167,25 @@ Every run returns `RunResult<S>` (`src/core/types.ts`):
 | File | Role |
 |---|---|
 | `src/core/types.ts` | `Action` primitive, `RunResult` contract, `defineAction` helper |
-| `src/tools/web.ts` | thin assembler — `webTools(sink, cache)` returns `web_search` + `fetch_page` from `search.ts` and `fetch.ts` |
-| `src/tools/search.ts` | `web_search` tool + `searchWeb` (SearXNG→Exa→Tavily ladder) |
-| `src/tools/fetch.ts` | `fetch_page` tool (impit→patchright→Tavily /extract ladder), `usable` shell-page guard, `fetchLadder` outcome classification (`ok`/`dead`/`transient`, `isDeadStatus`) for status-aware negative caching |
-| `src/tools/providers.ts` | shared external clients: the `impit` instance, lazy `exaClient`, lazy `tavilyClient` |
-| `src/tools/sink.ts` | the per-run `Sink` (sources, `seen` URL-provenance set, agent log, cost, `onStep`) + `record`/`clip`/`noteUrl`/`assertVerifiedUrl` helpers, shared by every tool |
-| `src/tools/extract.ts` | HTML→markdown: `extractStructuredData` (JSON-LD + meta, prepended) then Readability-first (article/blog) → Crawl4AI-prune fallback (structured pages) → Turndown GFM (leftover non-data tables flattened) |
-| `src/tools/apify.ts` | Apify start→poll→read-dataset helper (+ `usageTotalUsd` cost) and the `apifyTool` factory — the shared tool skeleton (URL guard → cached actor run → cost → map items → sources → step record) that every LinkedIn and Crunchbase tool is declared through (each supplies only `prepare`/`map`/`view`) |
+| `src/tools/web.ts` | thin assembler — `webTools(context)` returns `web_search` + `fetch_page` from `search.ts` and `fetch.ts` |
+| `src/tools/search.ts` | thin `web_search` adapter: `open-search.search(query)` → evidence and step recording |
+| `src/tools/fetch.ts` | thin `fetch_page` adapter: URL guard → `open-extract.extract(url)` → evidence and step recording |
+| `packages/open-search/` | isolated Bun/TypeScript workspace package: SearXNG→Exa→Tavily ladder, diagnostics, standalone CLI, and SearXNG service configuration |
+| `packages/open-extract/` | isolated Bun/TypeScript workspace package: URL retrieval ladder, HTML/PDF extraction, bounded Markdown, Patchright service, and standalone CLI |
+| `src/tools/sink.ts` | the per-run context (sources, `seen` URL-provenance set, agent log, `onStep`) + shared recording and URL-provenance helpers |
+| `src/tools/apify.ts` | Apify start→poll→read-dataset helper and the `apifyTool` factory shared by the LinkedIn and Crunchbase tools |
 | `src/tools/linkedin.ts` | `linkedin_profile` / `linkedin_posts` / `linkedin_post_reactions` / `linkedin_find_people` / `linkedin_company` (Apify HarvestAPI actors, each overridable via `APIFY_LINKEDIN_*_ACTOR` with the HarvestAPI ids as defaults; registered only when `APIFY_API_TOKEN` is set) |
 | `src/tools/crunchbase.ts` | `crunchbase_company` — **fallback-only** Crunchbase funding/firmographics via an Apify actor (`CRUNCHBASE_ACTOR`, default `parseforge~crunchbase-scraper`); registered only when `APIFY_API_TOKEN` is set |
-| `src/core/agent.ts` | per-run cost-tapped OpenRouter provider (`buildOpenRouter`), default model, research behaviour, `buildAgent`, tools-disabled `buildFinalizer` |
-| `src/core/cost.ts` | `CostAccumulator` + `emptyCost`, Tavily credit→USD rate, `extractCostUsd` (reads `usage.cost` from JSON or SSE OpenRouter responses) |
-| `src/core/debug.ts` | `debug(scope, message)` + `reason(e)` — stderr trace lines gated on `OPENCLAY_DEBUG` (unset/`0`/`false` = off, zero cost). Wired through every layer: ladder rungs with per-rung ms, swallowed fetch/LLM/extract errors, cache l1/l2 hit-miss, Apify run status, engine pass boundaries |
-| `src/core/cache.ts` | `createCache(l2?)` / `Cache` / `Layer2` — single-flight L1 in-memory cache (`getOrCompute(ns, key, fn, opts)`) shared across a `runTable`, with an optional pluggable L2; backs search + fetch result reuse. See `decisions.md` (Per-table cache) |
-| `src/core/cache-pg.ts` | `createCacheFromEnv` — wires the L2 Postgres backend (Drizzle over `drizzle-orm/bun-sql`, typed `openclay_cache` table, auto-created on first use) when `OPENCLAY_CACHE_URL` is set, else returns the L1-only cache. Best-effort: DB errors degrade to a miss, never raise into a run |
-| `src/core/engine.ts` | `run` (one row), `runTable` (a table), template fill, conditional gate, finalization fallback (`serializeFindings` + `buildFinalizer`), `RunCost` assembly; `runTable` owns one `Cache` and threads it through every `run` → `buildAgent` → web tools |
+| `src/core/agent.ts` | per-run OpenRouter provider, default model, research behaviour, `buildAgent`, tools-disabled `buildFinalizer` |
+| `src/core/debug.ts` | `debug(scope, message)` + `reason(e)` — stderr trace lines gated on `OPENCLAY_DEBUG`; covers extraction, search rungs, Apify status, LLM calls, and engine pass boundaries |
+| `src/core/engine.ts` | `run` (one row), `runTable` (a table), template fill, conditional gate, and finalization fallback (`serializeFindings` + `buildFinalizer`) |
 | `src/core/action.ts` | `ActionSpec` (the serialized brief: instructions · template · schema) + `buildAction` — the adapter both frontends call so neither duplicates action assembly |
 | `src/core/schema.ts` | `buildSchema` — turn a JSON Schema / short form into the action's Zod `output` |
 | `src/cli.ts` | CLI entry: wire args → `buildAction` → rows → `runTable` → render |
 | `src/cli/args.ts` | `parseArgs`, `Flags`/`Parsed` types, `HELP` text |
 | `src/cli/input.ts` | `parseCSV`, `loadRows`, `loadActionSpec`, `buildOptions` — flags/files → `ActionSpec` + rows + `RunOptions` |
-| `src/cli/render.ts` | `formatStep`, `money`, `costBreakdown`, `printRow` — terminal presentation |
+| `src/cli/render.ts` | `formatStep`, `printRow` — terminal presentation |
 | `src/api.ts` | HTTP entry: `@hono/zod-openapi` `POST /run` → `buildAction` → `runTable`, plus `/openapi.json` + Scalar `/docs` + `/health` |
-| `tests/` | `bun test` suite: schema building, skip path, template fill, extractor, search ladder, cache (single-flight, L1/L2 miss/hit, TTL-by-value), status mapping (`isDeadStatus`), tool-level cache E2E (no agent: dedup, 404 short-circuit + negative cache, transient not persisted), cache benchmark (measured call-count + wall-clock, cache-on vs cache-off); opt-in: live agent via `RUN_LIVE`, real-Postgres L2 via `OPENCLAY_CACHE_URL` |
 
 ## CLI
 
@@ -231,11 +219,10 @@ Zod at the boundary via `zod-from-json-schema`) **or** a short form for flat out
 detects which (a real JSON Schema has `type:"object"`/`properties`) and routes accordingly;
 either way the engine receives a Zod schema. By default stdout carries only the
 answer — `{ result, reasoning, sources }` (one object, or an array under `--rows`); `--json` prints the full
-`RunResult` envelope; `--pretty` prints a human per-row view with cost/token stats;
+`RunResult` envelope; `--pretty` prints a human per-row view with token and timing stats;
 `--out <file>` writes the full results to disk; `--model <id>` overrides the model per run;
 `--max-steps <n>` caps the agent loop iterations (default 5); `--concurrency <n>` sets how
-many rows run in parallel (default 5, wired as `RunOptions.concurrency`); `--fast` skips
-the heavy fetch rungs (proxy, solver) to cap page latency (wired as `RunOptions.fast`).
+many rows run in parallel (default 5, wired as `RunOptions.concurrency`).
 Agent steps **always stream live** to stderr as they happen — query, provider used (`via`),
 and the ladder `trail` with escalation reasons (wired as `RunOptions.onStep`, fired by the
 same `record()` that appends to `agentLog`; stderr keeps stdout pipeable). `--verbose` adds
@@ -247,7 +234,7 @@ sizes/text previews.
 `src/api.ts` is the second front end — the same engine over HTTP, so openclaygent deploys as
 a Ferret-style endpoint as well as a CLI. It shares **all** logic with the CLI: both call
 `buildAction` (`core/action.ts`) then `runTable`. The API file is pure HTTP wiring — no
-research, schema, or cost logic is re-implemented.
+research or schema logic is re-implemented.
 
 Built on `@hono/zod-openapi`: the request/response shapes are zod schemas, so the body is
 **validated automatically** (a malformed body returns `400` before the handler runs) and the
@@ -258,15 +245,16 @@ Routes:
 
 - `POST /run` — body is an `ActionSpec` (`instructions` · `template` · `schema`) plus rows
   (`rows` for a batch, or `input` for one) and options (`model`, `maxSteps`, `concurrency`,
-  `fast`, `require`). Returns `{ results: RunResult[] }` — one element per row.
+  `require`). Returns `{ results: RunResult[] }` — one element per row.
 - `GET /openapi.json` — the generated OpenAPI 3 document.
 - `GET /docs` — Scalar API reference over that document (same renderer as creatorcrawl).
 - `GET /health` — liveness check.
 
 Port is `PORT` (default 8080). No auth — front it with whatever the deploy provides if you
 expose it publicly (it spends LLM credits per call). `docker compose up -d` runs the API as the
-`api` service (built from the root `Dockerfile`, `entrypoint` overridden to `src/api.ts`,
-`env_file: .env`, waits on SearXNG's healthcheck) alongside the search + fetch stack; `bun run api`
+`api` service from the public `ghcr.io/simonbalfe/openclaygent` image, with its entrypoint
+overridden to `src/api.ts`. Compose pulls separate public SearXNG and Patchright images, loads
+`.env`, and waits on SearXNG's healthcheck; `bun run api`
 is the local-dev alternative.
 
 ```bash

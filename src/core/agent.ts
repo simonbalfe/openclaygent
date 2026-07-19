@@ -1,40 +1,15 @@
 import { Agent } from "@mastra/core/agent";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
-import type { Cache } from "./cache.ts";
-import { type CostAccumulator, extractCostUsd } from "./cost.ts";
-import { debug, reason } from "./debug.ts";
 import { crunchbaseTools } from "../tools/crunchbase.ts";
 import { linkedinTools } from "../tools/linkedin.ts";
-import { type Sink } from "../tools/sink.ts";
+import { type RunContext } from "../tools/sink.ts";
 import { webTools } from "../tools/web.ts";
 
 export const DEFAULT_MODEL = process.env.OPENCLAY_MODEL ?? "google/gemini-3.1-flash-lite";
 
-function tapCost(cost: CostAccumulator): typeof fetch {
-  const tapped = async (
-    input: Parameters<typeof fetch>[0],
-    init?: Parameters<typeof fetch>[1],
-  ): Promise<Response> => {
-    const started = performance.now();
-    const res = await fetch(input, init);
-    try {
-      const body = await res.clone().text();
-      const usd = extractCostUsd(res.headers.get("content-type") ?? "", body);
-      cost.openrouter += usd;
-      debug("llm", `${res.status} ${body.length}b cost=$${usd.toFixed(6)} ${Math.round(performance.now() - started)}ms`);
-    } catch (e) {
-      debug("llm", `cost tap failed: ${reason(e)}`);
-    }
-    return res;
-  };
-  return Object.assign(tapped, { preconnect: globalThis.fetch.preconnect }) as typeof fetch;
-}
-
-export function buildOpenRouter(cost: CostAccumulator) {
+export function buildOpenRouter() {
   return createOpenRouter({
     apiKey: process.env.OPENROUTER_API_KEY ?? "",
-    extraBody: { usage: { include: true } },
-    fetch: tapCost(cost),
   });
 }
 
@@ -51,8 +26,6 @@ const BEHAVIOUR = [
   "  (e.g. headcount 220 vs 51-200 vs 201-500), do not pick one and guess — go to the source that",
   "  answers it directly: linkedin_company (by NAME) for firmographics, or fetch_page on the",
   "  company's own / primary page. Read it, then answer.",
-  "- When you fetch_page, pass `query` describing the fact you want — long pages are reduced to",
-  "  the sections most relevant to it, so a precise query beats getting a blind truncation.",
   "- Always include the entity name in queries. When the task is about a specific company,",
   "  scope queries to its site (site:domain.com <topic>) before searching the open web.",
   "- Never rerun a query that already ran. If results were thin, change the angle, not the wording.",
@@ -135,15 +108,13 @@ export function buildFinalizer(provider: ReturnType<typeof buildOpenRouter>, mod
 }
 
 export function buildAgent(
-  sink: Sink,
+  context: RunContext,
   model: string = DEFAULT_MODEL,
-  cache: Cache,
-  fast = false,
 ): { agent: Agent; provider: ReturnType<typeof buildOpenRouter> } {
-  const provider = buildOpenRouter(sink.cost);
+  const provider = buildOpenRouter();
   const tools = {
-    ...webTools(sink, cache, fast),
-    ...(process.env.APIFY_API_TOKEN ? { ...linkedinTools(sink, cache), ...crunchbaseTools(sink, cache) } : {}),
+    ...webTools(context),
+    ...(process.env.APIFY_API_TOKEN ? { ...linkedinTools(context), ...crunchbaseTools(context) } : {}),
   };
   const agent = new Agent({
     id: `openclaygent-${model.replace(/[^a-z0-9]/gi, "-")}`,
