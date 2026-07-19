@@ -22,7 +22,7 @@ reads pages when it needs to, and returns typed, cited JSON. Run the same brief 
 
 ## How it works
 
-The agent loops — reason, pick a tool, observe — until it can answer. Its two tools are
+The agent loops — reason, pick a tool, observe — until it can answer. Its two web tools are
 cheapest-first ladders: a rung runs only when the one above it fails or returns empty, and
 an unset key is a skipped rung, never an error. You pay only when the free rungs miss.
 

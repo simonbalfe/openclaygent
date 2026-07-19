@@ -1,6 +1,6 @@
 # Roadmap
 
-Feature checklist. Done = shipped and live-tested. The rest is grouped by theme, each with
+Feature checklist. Done = implemented and shipped. Individual entries identify live verification where applicable. The rest is grouped by theme, each with
 the gap it closes (vs Clay's Claygent and the Ferret reference).
 
 ## Done
@@ -8,7 +8,7 @@ the gap it closes (vs Clay's Claygent and the Ferret reference).
 - [x] `Action` primitive — instructions + `{{template}}` + Zod `output` + `conditionalRun`
 - [x] `run` (one row) and `runTable` (a table)
 - [x] Mastra agent on OpenRouter (one key, any model)
-- [x] Exa tools — `web_search` (inline contents) + `fetch_page`
+- [x] Web tools — provider-agnostic `web_search` and `fetch_page` adapters over the isolated search and extraction packages
 - [x] Separate structuring model (so the agent can call tools)
 - [x] Finalization fallback on empty structured output — tools-disabled pass over the serialized findings when the agent loop ends without an answer (the reasoning-model step-budget exhaustion failure). See `decisions.md` (Finalization fallback)
 - [x] `Sink` → `sources` + `agentLog` provenance
@@ -55,7 +55,7 @@ the gap it closes (vs Clay's Claygent and the Ferret reference).
 - [x] Residential proxy rung — Evomi (`EVOMI_*`) via `&proxy=1`; exit IP verified residential, `via: patchright+proxy` in the log. Helps IP-reputation walls; does NOT beat DataDome (G2) or Turnstile (Crunchbase) on its own
 - [x] Turnstile widget solver — `&solve=1` interactive checkbox click (free, ~8s) makes an embedded `cf-turnstile` widget self-issue a real token; the multi-provider token solver (below) is the paid fallback. Verified on the WebUnlocker arena Level 2 live sitekey (752-char token, $0). This is the Crunchbase-class wall. Mechanism in `decisions.md` (Fetch ladder)
 - [~] CapSolver interstitial rung — `&solve=1` `AntiCloudflareTask` + sticky Evomi session for full-page CF challenges (`just a moment`), `via: patchright+solver`. CapSolver-only (cookie-return task; 2Captcha has no clean equivalent). Wired; unproven for G2's DataDome (a different wall, not CF Turnstile)
-- [x] Multi-provider token solver — `solveToken(vendor, url, sitekey, pref)` in `packages/open-extract/patchright/server.mjs` routes turnstile/hcaptcha/recaptcha to **CapSolver** (`*ProxyLess`) or **2Captcha** (`*Proxyless`) over one shared anti-captcha-style create→poll loop (`antiCaptchaSolve`). `solverOrder` tries the env-configured providers in order; `&solver=capsolver|twocaptcha` forces one. `/healthz` reports the live solver list. Live-verified: CapSolver solved the Google reCAPTCHA v2 demo (2425-char token). 2Captcha is wired but untested (`TWOCAPTCHA_API_KEY` not yet set). Gap: reCAPTCHA/hCaptcha tokens are produced but not yet injected back into `render()` (only Turnstile injects today) — next wiring step is per-vendor injection + making `usable()` fail on a present-but-unsolved widget so the solver fires in real fetches. Live-coverage sweep (`patchright/solver-coverage.mjs <capsolver|twocaptcha>`, real demo sitekeys). **CapSolver cracks** reCAPTCHA v2 (2425-char token), reCAPTCHA v3, Turnstile (real `0x` key, 816-char token), GeeTest v4 but **returns "unsupported service"** for hCaptcha and FunCaptcha — CapSolver dropped both. **2Captcha** (run `solver-coverage.mjs twocaptcha`) cracked reCAPTCHA v2/v3, Turnstile, and **FunCaptcha/Arkose live** (370-char token, 25s — the gap CapSolver can't touch at all). 2Captcha's API also *offers* hCaptcha (task accepted, not "unsupported"), but live attempts on the public demos (`accounts.hcaptcha.com/demo` + the canonical test key) returned `ERROR_CAPTCHA_UNSOLVABLE` — hCaptcha success is unconfirmed and needs a real target (likely with `rqdata`/proxy for enterprise demos). Routing rule: FunCaptcha → 2Captcha (only option); hCaptcha → 2Captcha (only option, real-site success TBD); everything else → either (CapSolver usually cheaper/faster). This is the concrete reason the solver is multi-provider. CF test keys (`1x…`/`3x…`) are rejected as `invalid websiteKey`, so always test Turnstile with a production key
+- [x] Multi-provider token solver — `solveToken(vendor, url, sitekey, pref)` in `packages/open-extract/patchright/server.mjs` routes supported challenges through CapSolver or 2Captcha using the shared create-and-poll flow. `/healthz` reports configured solvers and `&solver=capsolver|twocaptcha` selects one. Historical live checks established CapSolver coverage for reCAPTCHA and Turnstile and 2Captcha coverage for reCAPTCHA, Turnstile, and FunCaptcha; hCaptcha success remains unconfirmed. The current gap is injecting non-Turnstile tokens into `render()` and making `usable()` escalate on a present but unsolved widget.
 - [x] Generic captcha detector + diagnostics — `detect(html, cookies)` signature-matches the rendered widget (iframe src / widget class / response field), classifying cf-interstitial, turnstile, hcaptcha, recaptcha, datadome, akamai, perimeterx and extracting the sitekey (`data-sitekey` attr → iframe `sitekey`/`k` param). `/detect?url=` returns `{ vendor, sitekey }` + cookies; `/solve?url=&solver=` detects then solves a token vendor and reports provider + token length; `/fetch` adds an `x-captcha` response header. Known gap: hCaptcha widgets that inject late or in a nested frame can read as `null` (frame-timing) — needs a longer wait or a frame-aware check
 - [x] Paid fetch fallback — last-resort Tavily `/extract` (always-live) when every self-hosted fetch rung fails `usable()`. Exa `/contents` was removed from the fetch ladder for the live-data priority (rationale in `decisions.md`, Fetch ladder)
 - [x] Search provider cascade — SearXNG (free) → Exa → Tavily ladder, escalating on error or zero results. Mechanism in `decisions.md` (Search ladder). Tier-aware rung selection still waits on depth tiers
@@ -71,5 +71,4 @@ the gap it closes (vs Clay's Claygent and the Ferret reference).
 - [ ] Batch over Neon — read rows from / write results to a `leads-hub` schema
 - [ ] Deploy — host the HTTP endpoint so callers hit a URL, not a local script
 
-See `architecture.md` for what exists today and the vault `projects/claygent_clone/` for the
-full target these extend toward.
+See `architecture.md` for what exists today and the scope these items extend.

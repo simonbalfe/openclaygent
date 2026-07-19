@@ -5,13 +5,14 @@ typed, cited JSON answer for each row of a table, by researching the live web.
 
 ## Flow at a glance
 
-The action is fixed, the rows vary. An entry point builds the action, the engine runs it
-against each row, the agent does the web research, a structuring pass shapes the answer.
+The action is fixed, the rows vary. The CLI sends requests to the HTTP API, the API builds
+the action, the engine runs it against each row, and a structuring pass shapes the answer.
 
 ```mermaid
 flowchart LR
-  CLI["CLI / HTTP API<br/>(entry points)"] --> ACT["Action<br/>instructions · template · schema · skip rule"]
-  CLI --> ROWS["Row(s)<br/>company · domain · ..."]
+  CLI["Thin CLI client"] -->|"POST /run"| API["HTTP API<br/>(runtime entry point)"]
+  API --> ACT["Action<br/>instructions · template · schema · skip rule"]
+  API --> ROWS["Row(s)<br/>company · domain · ..."]
   ACT --> ENG
   ROWS --> ENG
   ENG["Engine<br/>run / runTable"] --> AG["Agent<br/>Mastra + OpenRouter"]
@@ -65,7 +66,7 @@ flowchart LR
 ## The unit: an action
 
 An **action** (`src/core/types.ts`, `Action<S>`) is a reusable research brief. It mirrors
-Clay's `use-ai` action from the catalog. Four parts:
+Clay's `use-ai` action from the catalog. Five parts:
 
 | Field | Role |
 |---|---|
@@ -86,7 +87,8 @@ fixed, the row varies.
    `skipped: true`, zero tokens. This is Clay's #1 credit saver.
 2. **Template fill** — `{{field}}` slots are replaced from the row; missing fields are
    marked `[MISSING:field]` and warned, not failed.
-3. **Agent loop** — a fresh Mastra agent (`src/core/agent.ts`) runs with two tools and the
+3. **Agent loop** — a fresh Mastra agent (`src/core/agent.ts`) runs with two web tools plus
+   optional LinkedIn and Crunchbase enrichment tools when `APIFY_API_TOKEN` is set, and the
    tuned research behaviour, looping reason → tool → observe until it answers. The system
    context stacks three layers, fixed-first for stable prompts across rows: the
    research doctrine (`BEHAVIOUR` in `src/core/agent.ts` — search/navigation/evidence/answer
@@ -177,7 +179,7 @@ Every run returns `RunResult<S>` (`src/core/types.ts`):
 | `src/tools/linkedin.ts` | `linkedin_profile` / `linkedin_posts` / `linkedin_post_reactions` / `linkedin_find_people` / `linkedin_company` (Apify HarvestAPI actors, each overridable via `APIFY_LINKEDIN_*_ACTOR` with the HarvestAPI ids as defaults; registered only when `APIFY_API_TOKEN` is set) |
 | `src/tools/crunchbase.ts` | `crunchbase_company` — **fallback-only** Crunchbase funding/firmographics via an Apify actor (`CRUNCHBASE_ACTOR`, default `parseforge~crunchbase-scraper`); registered only when `APIFY_API_TOKEN` is set |
 | `src/core/agent.ts` | per-run OpenRouter provider, default model, research behaviour, `buildAgent`, tools-disabled `buildFinalizer` |
-| `src/core/debug.ts` | `debug(scope, message)` + `reason(e)` — stderr trace lines gated on `OPENCLAY_DEBUG`; covers extraction, search rungs, Apify status, LLM calls, and engine pass boundaries |
+| `src/core/debug.ts` | `debug(scope, message)` + `reason(e)` — API stderr trace lines gated on `OPENCLAY_DEBUG`; covers adapter outcomes, Apify status, LLM calls, and engine pass boundaries. The standalone packages expose their own `--debug` flags. |
 | `src/core/engine.ts` | `run` (one row), `runTable` (a table), template fill, conditional gate, and finalization fallback (`serializeFindings` + `buildFinalizer`) |
 | `src/core/action.ts` | `ActionSpec` (the serialized brief: instructions · template · schema) + `buildAction`, owned by the API runtime |
 | `src/core/http.ts` | shared validated `POST /run` request and response contract used by the API and thin CLI client |
@@ -279,7 +281,7 @@ shelling out instead:
   conversation. Each call is isolated; only the compact `RunResult` comes back.
 - **Cited and typed.** The agent gets `result` plus `sources` it can trust and quote, not a
   prose answer it has to re-parse.
-- **Cheap model on the grunt work.** The research loop runs on DeepSeek (or whatever `--model`
+- **Cheap model on the grunt work.** The research loop runs on Gemini Flash Lite by default (or whatever `--model`
   is set to) while the calling agent stays on its own model — bring-your-own keys, no Clay
   credit margin.
 
@@ -289,5 +291,4 @@ This is the single action loop, exposed by the API and reached through its CLI c
 value. The cheapest-first provider **ladders** for search and fetch are built (see The tools);
 what is deliberately not built is the catalog's composable primitives: `waterfall` (user-ranked
 providers per action, distinct from the internal search/fetch ladders), `recipe` (multi-step
-chains), model-tiers, and batch-over-Neon. The vault note `projects/claygent_clone/` holds the
-full architecture these extend toward.
+chains), model-tiers, and batch-over-Neon.

@@ -28,7 +28,7 @@ its env is unset) — mechanism and rung order in `docs/architecture.md` (The to
 - `src/tools/` — Openclaygent adapters and enrichment tools: `web.ts` (assembler) · `search.ts` (evidence adapter around `open-search`) · `fetch.ts` (URL guard/evidence adapter around `open-extract`) · `sink.ts` (run provenance and trace) · `apify.ts` · `linkedin.ts` · `crunchbase.ts`.
 - `packages/open-search/` — isolated query-to-results package with its own provider ladder, CLI, dependencies, and `searxng/` service configuration.
 - `packages/open-extract/` — isolated URL-to-Markdown package with its own source, CLI, dependencies, and `patchright/` rendered-browser service.
-- `src/core/debug.ts` — `OPENCLAY_DEBUG=1` stderr tracer (rung timings, swallowed errors, Apify status, and LLM latency).
+- `src/core/debug.ts` — `OPENCLAY_DEBUG=1` API stderr tracer (adapter outcomes, swallowed errors, Apify status, and LLM latency). The standalone search and extraction CLIs use `--debug`.
 - `src/cli.ts` (CLI entry) + `src/cli/` (`args.ts` parse · `input.ts` rows/action/options · `render.ts` output).
 - `src/api.ts` — HTTP entry (Hono + `@hono/zod-openapi`): `POST /run`, `/openapi.json`, `/docs`, `/health`.
 
@@ -52,5 +52,5 @@ Use this root guide for every workspace. Route changes by ownership:
 
 - **No explanatory comments in source.** Architecture and rationale live in `docs/`, code stays comment-free. Zod `.describe()` and tool `description` strings are functional schema, not comments — keep those.
 - Scope (what's built vs the deliberate extensions) is owned by `docs/architecture.md`; point there rather than restating it.
-- `.claude/settings.json` carries the only hooks: a judgment-based doc-sync pair (SessionStart ownership pointer + Stop doc-update check); see `docs/decisions.md` for why nothing heavier.
+- Documentation synchronization is review-driven; update the canonical owner named above whenever behavior or wiring changes.
 - **Stay in this repo when the task is focused.** Reason only about openclaygent's own code, infra, and constraints. Do NOT pull in unrelated projects, external databases, or deployment details unless the task explicitly calls for them — that outside context biases a focused answer toward infra that isn't part of this problem.

@@ -24,4 +24,4 @@ docker build -t open-extract-patchright ./packages/open-extract/patchright
 docker run --rm -p 9223:9223 open-extract-patchright
 ```
 
-Set `PATCHRIGHT_URL=http://localhost:9223` to enable it. The monorepo's root Compose file builds this same package-owned service alongside the application and search services.
+Set `PATCHRIGHT_URL=http://localhost:9223` to enable it. The monorepo's root Compose file pulls the published `openclaygent-patchright` image built from this package-owned service.

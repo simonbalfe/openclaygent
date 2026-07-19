@@ -386,14 +386,14 @@ pages and is ~150 lines we control.
 
 ## LinkedIn via Apify HarvestAPI actors, env-gated
 
-LinkedIn pages are login-walled, so the fetch cascade can never read them. Four tools in
-`src/tools/linkedin.ts` call HarvestAPI's no-cookie Apify actors synchronously
-(`POST /v2/acts/harvestapi~<actor>/run-sync-get-dataset-items?timeout=120`):
+LinkedIn pages are login-walled, so the fetch cascade can never read them. Five tools in
+`src/tools/linkedin.ts` call HarvestAPI's no-cookie Apify actors through the shared asynchronous
+start, poll, and dataset-read flow in `src/tools/apify.ts`:
 `linkedin-profile-scraper` (input `{url}`), `linkedin-profile-posts` (input
 `{targetUrls, maxPosts}`), `linkedin-post-reactions` (input `{posts, maxItems}`),
 `linkedin-company-employees` (input `{companies, jobTitles?, searchQuery?, maxItems}` —
 exposed as `linkedin_find_people`; $4 per 1k profiles in short mode, $12 per 1k with
-`findEmails`).
+`findEmails`), and `linkedin-company` (exposed as `linkedin_company`).
 Raw actor items are huge; each tool maps them to a compact shape (truncated text, top-5
 experience, reactor name/position/url) so a call stays a few hundred tokens, not tens of
 thousands. The tools register only when `APIFY_API_TOKEN` is set — without it the agent
@@ -401,15 +401,12 @@ has no LinkedIn capability and the doctrine's "never fetch linkedin.com" rule st
 applies. Cost is per item (~$2–4 per 1k), which is why the doctrine and tool descriptions
 both say call once per target with small max counts.
 
-## `.claude/` hooks: a judgment-based doc-sync pair, nothing more
+## Documentation synchronization is review-driven
 
-Originally there were none — at the initial size there was no drift pressure. That held
-until the fetch-ladder rewrite and the fourth LinkedIn tool both landed without their doc
-updates (caught by the 2026-06 codebase audit). `.claude/settings.json` now carries the
-minimal scriptless pair: a SessionStart pointer naming which doc owns which fact, and a
-Stop prompt hook that flags a `src/`, compose, `packages/open-extract/`, or `searxng/` change landing
-without its owning doc. No hook scripts to maintain. Escalate to a real pre-commit diff check only if
-drift survives the nudge.
+The repository does not depend on harness-specific lifecycle hooks. `AGENTS.md` maps each
+area to its canonical documentation, and code reviews must update that owner when behavior,
+Compose wiring, or package boundaries change. Add a repository-native CI drift check only
+if review repeatedly fails to keep those files aligned.
 
 ## Large pages: bounded by the extraction package
 

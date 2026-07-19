@@ -217,7 +217,8 @@ Use `input` instead of `rows` for one row:
   faster and cheaper but can reduce coverage.
 - `--concurrency 5` controls simultaneous rows. Reduce it if providers rate-limit the run.
 - `--model <openrouter-model-id>` overrides the configured model for one run.
-- `OPENCLAY_DEBUG=1 openclaygent ...` prints detailed provider and timing traces.
+- Set `OPENCLAY_DEBUG=1` in `.env` and restart the API to print API adapter and timing traces.
+  Use each standalone package CLI's `--debug` flag for its full provider ladder diagnostics.
 
 Example run with an explicit model:
 
