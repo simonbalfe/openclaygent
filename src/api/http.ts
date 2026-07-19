@@ -1,6 +1,6 @@
 import { z } from "@hono/zod-openapi";
 
-const RowSchema = z
+export const HttpRowSchema = z
   .record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()]))
   .openapi("Row", { example: { company: "Linear", domain: "linear.app" } });
 
@@ -12,8 +12,8 @@ export const RunRequestSchema = z
     schema: z
       .record(z.string(), z.unknown())
       .openapi({ example: { crm: "string?", confidence: "low|medium|high" } }),
-    rows: z.array(RowSchema).optional().openapi({ description: "Batch of rows." }),
-    input: RowSchema.optional().openapi({ description: "A single row (used when `rows` is absent)." }),
+    rows: z.array(HttpRowSchema).optional().openapi({ description: "Batch of rows." }),
+    input: HttpRowSchema.optional().openapi({ description: "A single row (used when `rows` is absent)." }),
     model: z.string().optional(),
     maxSteps: z.number().int().positive().optional(),
     concurrency: z.number().int().positive().optional(),
@@ -38,6 +38,14 @@ const RunResultSchema = z
 
 export const RunResponseSchema = z.object({ results: z.array(RunResultSchema) }).openapi("RunResponse");
 export const ErrorResponseSchema = z.object({ error: z.string() }).openapi("Error");
+export const RequestActionSchema = RunRequestSchema.pick({
+  name: true,
+  instructions: true,
+  template: true,
+  schema: true,
+});
 
 export type RunRequest = z.infer<typeof RunRequestSchema>;
 export type HttpRunResult = z.infer<typeof RunResultSchema>;
+export type HttpRow = z.infer<typeof HttpRowSchema>;
+export type RequestAction = z.infer<typeof RequestActionSchema>;

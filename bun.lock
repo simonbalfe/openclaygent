@@ -9,6 +9,7 @@
         "@mastra/core": "^1.41.0",
         "@openrouter/ai-sdk-provider": "^2.9.0",
         "@scalar/hono-api-reference": "^0.11.3",
+        "open-apify": "workspace:*",
         "open-extract": "workspace:*",
         "open-search": "workspace:*",
         "zod": "^4.4.3",
@@ -17,6 +18,17 @@
       "devDependencies": {
         "@types/bun": "latest",
         "knip": "^6.16.1",
+        "typescript": "^5",
+      },
+    },
+    "packages/open-apify": {
+      "name": "open-apify",
+      "version": "0.1.0",
+      "dependencies": {
+        "zod": "^4.4.3",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
         "typescript": "^5",
       },
     },
@@ -37,6 +49,7 @@
         "turndown": "^7.2.4",
         "turndown-plugin-gfm": "^1.0.2",
         "unpdf": "^1.6.2",
+        "zod": "^4.4.3",
       },
       "devDependencies": {
         "@types/bun": "latest",
@@ -52,6 +65,7 @@
       "dependencies": {
         "@tavily/core": "^0.7.6",
         "exa-js": "^2.13.0",
+        "zod": "^4.4.3",
       },
       "devDependencies": {
         "@types/bun": "latest",
@@ -603,6 +617,8 @@
     "on-finished": ["on-finished@2.4.1", "", { "dependencies": { "ee-first": "1.1.1" } }, "sha512-oVlzkg3ENAhCk2zdv7IJwd/QUD4z2RxRwpkcGY8psCVcCYZNq4wYnVWALHM+brtuJjePWiYF/ClmuDr8Ch5+kg=="],
 
     "once": ["once@1.4.0", "", { "dependencies": { "wrappy": "1" } }, "sha512-lNaJgI+2Q5URQBkccEKHTQOPaXdUxnZZElQTZY0MFUAuaEqe1E+Nyvgdz/aIyNi6Z9MzO5dv1H8n58/GELp3+w=="],
+
+    "open-apify": ["open-apify@workspace:packages/open-apify"],
 
     "open-extract": ["open-extract@workspace:packages/open-extract"],
 

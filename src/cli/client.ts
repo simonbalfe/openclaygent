@@ -1,4 +1,4 @@
-import { ErrorResponseSchema, RunResponseSchema, type HttpRunResult, type RunRequest } from "../core/http.ts";
+import { ErrorResponseSchema, RunResponseSchema, type HttpRunResult, type RunRequest } from "../api/http.ts";
 
 export async function runRemote(apiUrl: string, request: RunRequest): Promise<HttpRunResult[]> {
   const endpoint = new URL("/run", apiUrl.endsWith("/") ? apiUrl : `${apiUrl}/`);

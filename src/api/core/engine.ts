@@ -1,7 +1,7 @@
 import { z } from "zod";
-import { buildAgent, buildFinalizer, DEFAULT_MODEL } from "./agent.ts";
+import { buildAgent, buildFinalizer, DEFAULT_MODEL } from "../agent/index.ts";
 import { debug } from "./debug.ts";
-import { createRunContext, noteUrl, record, type RunContext } from "../tools/sink.ts";
+import { createRunContext, noteUrl, record, type RunContext } from "../agent/sink.ts";
 import type { Action, AgentStep, Evidence, Row, RunResult } from "./types.ts";
 
 export interface RunOptions {
@@ -16,24 +16,30 @@ const DEFAULT_MAX_STEPS = 5;
 const DEFAULT_MAX_TOKENS = 1500;
 const FINALIZE_MAX_TOKENS = 4000;
 
-interface Structured<S extends z.ZodType> {
-  answer: z.infer<S>;
-  reasoning?: string;
-}
-
-interface PassResult<S extends z.ZodType> {
-  object: Structured<S> | null;
+interface PassResult<T> {
+  object: T | null;
   inputTokens: number;
   outputTokens: number;
 }
 
-function tally<S extends z.ZodType>(res: unknown): PassResult<S> {
-  const { object, usage } = res as {
-    object?: Structured<S>;
-    usage?: { inputTokens?: number; outputTokens?: number };
-  };
+const PassResponseSchema = z.object({
+  object: z.unknown().optional(),
+  usage: z
+    .object({ inputTokens: z.number().optional(), outputTokens: z.number().optional() })
+    .optional(),
+});
+
+function tally<S extends z.ZodType>(
+  response: unknown,
+  answerSchema: S,
+): PassResult<{ answer: z.output<S>; reasoning: string }> {
+  const { object, usage } = PassResponseSchema.parse(response);
+  const envelope = z.object({ answer: z.unknown(), reasoning: z.string() }).safeParse(object);
+  const answer = envelope.success ? answerSchema.safeParse(envelope.data.answer) : null;
   return {
-    object: object ?? null,
+    object: envelope.success && answer?.success
+      ? { answer: answer.data, reasoning: envelope.data.reasoning }
+      : null,
     inputTokens: usage?.inputTokens ?? 0,
     outputTokens: usage?.outputTokens ?? 0,
   };
@@ -186,12 +192,13 @@ async function executeRun<S extends z.ZodType>(
 
   debug("engine", `[${context.runId}] [${action.name}] row start model=${model} task="${text.slice(0, 120)}"`);
   const systemPrompt = { role: "system", content: action.instructions } as const;
-  let { object, inputTokens, outputTokens } = tally<S>(
+  let { object, inputTokens, outputTokens } = tally(
     await agent.generate([systemPrompt, { role: "user", content: text }], {
       maxSteps: opts.maxSteps ?? DEFAULT_MAX_STEPS,
       modelSettings: { maxOutputTokens },
       structuredOutput,
     }),
+    action.output,
   );
   metrics.inputTokens = inputTokens;
   metrics.outputTokens = outputTokens;
@@ -202,11 +209,12 @@ async function executeRun<S extends z.ZodType>(
 
   if (object === null) {
     debug("engine", `[${context.runId}] [${action.name}] structuring returned null → finalizer over ${context.evidence.length} evidence items`);
-    const finalize = tally<S>(
+    const finalize = tally(
       await buildFinalizer(provider, model).generate(
         [systemPrompt, { role: "user", content: finalizePrompt(text, context.evidence) }],
         { modelSettings: { maxOutputTokens: Math.max(maxOutputTokens, FINALIZE_MAX_TOKENS) }, structuredOutput },
       ),
+      action.output,
     );
     object = finalize.object;
     inputTokens += finalize.inputTokens;

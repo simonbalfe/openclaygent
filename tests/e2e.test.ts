@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { z } from "zod";
-import { runTable } from "../src/core/engine.ts";
-import { defineAction } from "../src/core/types.ts";
+import { runTable } from "../src/api/core/engine.ts";
+import { defineAction } from "../src/api/core/types.ts";
 
 const live = test.skipIf(!process.env.RUN_LIVE || !process.env.OPENROUTER_API_KEY);
 

@@ -3,10 +3,12 @@ import * as cheerio from "cheerio";
 import type { AnyNode, Element } from "domhandler";
 import { parseHTML } from "linkedom";
 import TurndownService from "turndown";
+import { z } from "zod";
 import { gfm } from "./gfm.ts";
 
 type Api = cheerio.CheerioAPI;
 type LdNode = Record<string, unknown>;
+const LdNodeSchema = z.record(z.string(), z.unknown());
 
 const MIN_ARTICLE_CHARS = 250;
 const STRUCTURED_CAP = 2500;
@@ -146,9 +148,15 @@ function pruneMarkdown(html: string, baseUrl: string): string {
   return tidy(converter(baseUrl).turndown($(body).html() ?? ""));
 }
 
-function asArray<T>(value: T | T[] | undefined | null): T[] {
-  if (value === undefined || value === null) return [];
-  return Array.isArray(value) ? value : [value];
+function ldNode(value: unknown): LdNode | null {
+  const parsed = LdNodeSchema.safeParse(value);
+  return parsed.success ? parsed.data : null;
+}
+
+function ldNodes(value: unknown): LdNode[] {
+  return (Array.isArray(value) ? value : [value])
+    .map(ldNode)
+    .filter((node): node is LdNode => node !== null);
 }
 
 function ldString(value: unknown): string | null {
@@ -162,8 +170,8 @@ function collectLdNodes(value: unknown, output: LdNode[]): void {
     for (const item of value) collectLdNodes(item, output);
     return;
   }
-  if (!value || typeof value !== "object") return;
-  const node = value as LdNode;
+  const node = ldNode(value);
+  if (!node) return;
   if ("@graph" in node) collectLdNodes(node["@graph"], output);
   if ("@type" in node) output.push(node);
 }
@@ -176,12 +184,10 @@ function typesOf(node: LdNode): string[] {
 
 function renderAddress(value: unknown): string | null {
   if (typeof value === "string") return ldString(value);
-  if (!value || typeof value !== "object") return null;
-  const address = value as LdNode;
+  const address = ldNode(value);
+  if (!address) return null;
   const countryValue = address.addressCountry;
-  const country = countryValue && typeof countryValue === "object"
-    ? ldString((countryValue as LdNode).name)
-    : ldString(countryValue);
+  const country = ldString(ldNode(countryValue)?.name ?? countryValue);
   const parts = [address.streetAddress, address.addressLocality, address.addressRegion, address.postalCode]
     .map(ldString)
     .concat(country)
@@ -191,8 +197,8 @@ function renderAddress(value: unknown): string | null {
 
 function renderEmployees(value: unknown): string | null {
   if (typeof value === "number" || typeof value === "string") return ldString(value);
-  if (!value || typeof value !== "object") return null;
-  const employees = value as LdNode;
+  const employees = ldNode(value);
+  if (!employees) return null;
   const direct = ldString(employees.value);
   if (direct) return direct;
   const min = ldString(employees.minValue);
@@ -214,15 +220,15 @@ function renderNode(node: LdNode): string[] {
     return facts.length ? [`Organization: ${facts.join("; ")}`] : [];
   }
   if (matches(/FAQPage$/i)) {
-    return asArray(node.mainEntity as LdNode | LdNode[]).flatMap((question) => {
+    return ldNodes(node.mainEntity).flatMap((question) => {
       const title = ldString(question.name);
       const accepted = question.acceptedAnswer;
-      const answer = accepted && typeof accepted === "object" ? ldString((accepted as LdNode).text) : ldString(accepted);
+      const answer = ldString(ldNode(accepted)?.text ?? accepted);
       return title && answer ? [`FAQ: ${title} ${answer}`] : [];
     });
   }
   if (matches(/^Product$/i)) {
-    const offer = asArray(node.offers as LdNode | LdNode[])[0];
+    const offer = ldNodes(node.offers)[0];
     const price = offer ? [ldString(offer.price), ldString(offer.priceCurrency)].filter(Boolean).join(" ") : null;
     const facts = [ldString(node.name) && `name: ${ldString(node.name)}`, price && `price: ${price}`]
       .filter((fact): fact is string => Boolean(fact));
@@ -238,7 +244,8 @@ function extractStructuredData(html: string): string {
     const raw = $(element).text().trim();
     if (!raw) return;
     try {
-      collectLdNodes(JSON.parse(raw) as unknown, nodes);
+      const data: unknown = JSON.parse(raw);
+      collectLdNodes(data, nodes);
     } catch {
       return;
     }

@@ -10,9 +10,9 @@ its env is unset) — mechanism and rung order in `docs/architecture.md` (The to
 
 - `curl -fsSL <raw>/scripts/install.sh | bash` — the from-nothing entry (`scripts/install.sh`): clones the repo to `$HOME/openclaygent` (override `OPENCLAYGENT_DIR`/`OPENCLAYGENT_REPO`), installs Bun if missing, then execs `bun run scripts/setup.ts` with stdin bound to `/dev/tty` so the key prompts work even under `curl | bash`.
 - `bun run setup` — the one-click entry once cloned (`scripts/setup.ts`, needs Bun): installs and links the thin CLI, creates `.env`, reuses exported keys, prompts only for missing keys, pulls the three public images, then runs `docker compose up -d --wait --wait-timeout 180`. Success means the API, SearXNG, and Patchright health checks all passed.
-- `bun run cli -- --help` — the thin HTTP CLI (`src/cli.ts`); it parses local files, calls `POST /run` at `OPENCLAYGENT_API_URL` (default `localhost:8080`), and renders the response. It never imports or runs the engine. Setup runs `bun link`, so a global `openclaygent` command also points at the install dir.
+- `bun run cli -- --help` — the thin HTTP CLI (`src/cli/index.ts`); it parses local files, calls `POST /run` at `OPENCLAYGENT_API_URL` (default `localhost:8080`), and renders the response. It never imports or runs the engine. Setup runs `bun link`, so a global `openclaygent` command also points at the install dir.
 - `./scripts/uninstall.sh` — clean wipe (confirm-gated, `-y`/`OPENCLAYGENT_YES=1` to skip). Reverts only what the install adds: `docker compose down -v`, removes the `openclaygent-api` + patchright images (all tags), `bun unlink` + drops the global `openclaygent` bin (only if it links into an openclaygent checkout), deletes `$HOME/openclaygent` (override `OPENCLAYGENT_DIR`) but only after confirming it's an openclaygent checkout and not `/`/`$HOME`. Never touches the shared `searxng` base image, other projects, or `~/.zshrc` keys.
-- `bun run api` — the only research runtime (`src/api.ts`, Hono + OpenAPI): `POST /run`, `/docs`, `/openapi.json`, `/health` on `PORT` (default 8080). It owns `buildAction` + `runTable`; the CLI is only a client. See `docs/architecture.md` (HTTP API).
+- `bun run api` — the only research runtime (`src/api/index.ts`, Hono + OpenAPI): `POST /run`, `/docs`, `/openapi.json`, `/health` on `PORT` (default 8080). It owns `buildAction` + `runTable`; the CLI is only a client. See `docs/architecture.md` (HTTP API).
 - `bun run test:e2e` — the single live end-to-end test; requires `OPENROUTER_API_KEY` and exercises one URL through the full agent flow.
 - `bun run typecheck` — `tsc --noEmit`.
 - `bun run knip` — dead-code / unused-export / unused-dependency check.
@@ -21,25 +21,30 @@ its env is unset) — mechanism and rung order in `docs/architecture.md` (The to
 
 ## Key files
 
-- `src/core/types.ts` — `Action` primitive + `RunResult` contract.
-- `src/core/engine.ts` — `run` (one row), `runTable` (a table).
-- `src/core/agent.ts` — Mastra agent + OpenRouter provider.
-- `src/core/action.ts` — `ActionSpec` + `buildAction`, used by the API runtime; `src/core/schema.ts` — JSON-Schema/short-form → Zod builder; `src/core/http.ts` — shared validated HTTP contract.
-- `src/tools/` — Openclaygent adapters and enrichment tools: `web.ts` (assembler) · `search.ts` (evidence adapter around `open-search`) · `fetch.ts` (URL guard/evidence adapter around `open-extract`) · `sink.ts` (run provenance and trace) · `apify.ts` · `linkedin.ts` · `crunchbase.ts`.
+- `src/api/core/types.ts` — `Action` primitive + `RunResult` contract.
+- `src/api/core/engine.ts` — `run` (one row), `runTable` (a table).
+- `src/api/agent/index.ts` — Mastra agent + OpenRouter provider; `src/api/agent/tools/` contains its colocated tool adapters and `src/api/agent/sink.ts` owns per-run context and provenance.
+- `src/api/core/action.ts` — `ActionSpec` + `buildAction`, used by the API runtime; `src/api/core/schema.ts` — JSON-Schema/short-form → Zod builder; `src/api/http.ts` — shared validated HTTP contract.
+- `src/api/agent/tools/` — agent-local adapters and enrichment tools: `web.ts` (assembler) · `search.ts` (evidence adapter around `open-search`) · `fetch.ts` (URL guard/evidence adapter around `open-extract`) · `apify.ts` (Mastra/provenance adapter around `open-apify`) · `linkedin.ts` · `crunchbase.ts`.
 - `packages/open-search/` — isolated query-to-results package with its own provider ladder, CLI, dependencies, and `searxng/` service configuration.
 - `packages/open-extract/` — isolated URL-to-Markdown package with its own source, CLI, dependencies, and `patchright/` rendered-browser service.
-- `src/core/debug.ts` — `OPENCLAY_DEBUG=1` API stderr tracer (adapter outcomes, swallowed errors, Apify status, and LLM latency). The standalone search and extraction CLIs use `--debug`.
-- `src/cli.ts` (CLI entry) + `src/cli/` (`args.ts` parse · `input.ts` rows/action/options · `render.ts` output).
-- `src/api.ts` — HTTP entry (Hono + `@hono/zod-openapi`): `POST /run`, `/openapi.json`, `/docs`, `/health`.
+- `packages/open-apify/` — framework-independent Apify actor runner: start, poll, timeout, dataset retrieval, and run metadata.
+- `src/api/core/debug.ts` — `OPENCLAY_DEBUG=1` API stderr tracer (adapter outcomes, swallowed errors, Apify status, and LLM latency). The standalone search and extraction CLIs use `--debug`.
+- `src/cli/` — thin CLI application (`index.ts` entry · `args.ts` parse · `input.ts` rows/action/options · `client.ts` HTTP · `render.ts` output).
+- `src/api/` — HTTP application and complete Claygent runtime: `index.ts`, `http.ts`, `core/`, and `agent/`.
 
 ## Workspace routing
 
 Use this root guide for every workspace. Route changes by ownership:
 
-- `src/` is the Openclaygent application. It owns Mastra orchestration, row execution, schemas, provenance, evidence, traces, CLI, and HTTP API.
-- `packages/open-search/` is the framework-agnostic search project. Its public operation is `search(query, options?)`. It owns the provider ladder, diagnostics, standalone CLI, and `searxng/` service configuration. It must never import from the root `src/` tree or own agent provenance and orchestration. Run `bun run typecheck` from that package after changes.
-- `packages/open-extract/` is the framework-agnostic extraction project. Its public operation is `extract(url)`. It owns retrieval, HTML/PDF conversion, diagnostics, standalone CLI, and the `patchright/` service. It must never import from the root `src/` tree or own search, provenance, databases, or orchestration. Run `bun run typecheck` from that package after changes.
-- Root adapters in `src/tools/search.ts` and `src/tools/fetch.ts` translate package results into Openclaygent evidence and trace records. Keep provider mechanics inside their packages.
+- `src/api/` is the Openclaygent runtime. It owns the HTTP contract, Mastra orchestration, row execution, schemas, provenance, evidence, and traces.
+- `src/api/http.ts` is the API's public transport contract. It must not import runtime core or agent code.
+- `src/cli/` depends only on `src/api/http.ts` and its own modules. It must never import `src/api/core/` or `src/api/agent/`.
+- `src/api/index.ts` is the composition boundary allowed to import the HTTP contract and runtime core.
+- `packages/open-search/` is the framework-agnostic search project. Its public operation is `search(query, options?)`. It owns the provider ladder, diagnostics, standalone CLI, and `searxng/` service configuration. It must never import from `src/api/` or own agent provenance and orchestration. Run `bun run typecheck` from that package after changes.
+- `packages/open-extract/` is the framework-agnostic extraction project. Its public operation is `extract(url)`. It owns retrieval, HTML/PDF conversion, diagnostics, standalone CLI, and the `patchright/` service. It must never import from `src/api/` or own search, provenance, databases, or orchestration. Run `bun run typecheck` from that package after changes.
+- `packages/open-apify/` is the framework-agnostic Apify actor runner. Its public operation is `runActor(options)`. It owns actor start, polling, timeout, dataset retrieval, and provider run metadata. It must never import from `src/api/` or own Mastra tools, environment lookup, provenance, or provider-specific mapping. Run `bun run check` from that package after changes.
+- Agent adapters in `src/api/agent/tools/search.ts`, `fetch.ts`, and `apify.ts` translate package results into Openclaygent evidence and trace records. Keep provider mechanics inside their packages.
 - Keep source comment-free across every workspace and put durable rationale in the relevant Markdown documentation.
 
 ## Docs (read before changing code)

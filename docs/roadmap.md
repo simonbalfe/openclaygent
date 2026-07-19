@@ -17,6 +17,7 @@ the gap it closes (vs Clay's Claygent and the Ferret reference).
 - [x] Isolated search workspace — `web_search` delegates query execution to `packages/open-search` through the `open-search` package import; the package owns the SearXNG→Exa→Tavily ladder, standalone CLI, diagnostics, and SearXNG configuration
 - [x] Fetch ladder — imported from the isolated `open-extract` workspace package: impit (browser TLS), Readability/pruning, PDF extraction, Patchright direct/proxy/solver escalation, and optional Tavily fallback. Mechanism in `architecture.md` (The tools) + `decisions.md` (Fetch ladder)
 - [x] LinkedIn tools — `linkedin_profile` / `linkedin_posts` / `linkedin_post_reactions` / `linkedin_find_people` / `linkedin_company` (exact headcount, size range, industry, HQ, founded year, follower count) via Apify HarvestAPI actors (no-cookie, ~$2–4/1k items; employee search $4/1k, 3x with emails), env-gated on `APIFY_API_TOKEN`
+- [x] `open-apify` workspace — framework-independent actor start, polling, timeout, dataset retrieval, and run metadata with injected HTTP/status hooks for isolated tests; Mastra and provenance wiring remains in `src/api/agent/tools/apify.ts`
 - [x] `buildSchema` — turn a CLI JSON Schema / short form into the action's Zod `output`
 - [x] Docs — architecture (+ Mermaid), decisions
 
@@ -44,7 +45,7 @@ the gap it closes (vs Clay's Claygent and the Ferret reference).
 
 ## Interfaces
 
-- [x] HTTP `POST /run` endpoint (`src/api.ts`, Hono + `@hono/zod-openapi`) — the sole research runtime; single via `input`, batch via `rows`; zod-validated body (auto 400), generated `/openapi.json` + Scalar `/docs`; consumed by the CLI (no auth yet)
+- [x] HTTP `POST /run` endpoint (`src/api/index.ts`, Hono + `@hono/zod-openapi`) — the sole research runtime; single via `input`, batch via `rows`; zod-validated body (auto 400), generated `/openapi.json` + Scalar `/docs`; consumed by the CLI (no auth yet)
 - [ ] API auth — bearer/API-key gate on `POST /run` before exposing the endpoint publicly
 - [ ] CSV output — write results back as columns appended to the input rows
 - [ ] Clay HTTP-column recipe — documented body shape for dropping it into a Clay table

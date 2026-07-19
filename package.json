@@ -3,19 +3,19 @@
   "version": "0.0.1",
   "description": "Open-source Claygent — a per-row web research agent. Brief in (target + prompt + schema), structured JSON out.",
   "type": "module",
-  "module": "src/cli.ts",
+  "module": "src/cli/index.ts",
   "private": true,
   "bin": {
-    "openclaygent": "src/cli.ts"
+    "openclaygent": "src/cli/index.ts"
   },
   "workspaces": [
     "packages/*"
   ],
   "scripts": {
     "setup": "bun run scripts/setup.ts",
-    "cli": "bun run src/cli.ts",
-    "api": "bun run src/api.ts",
-    "api:dev": "bun --watch run src/api.ts",
+    "cli": "bun run src/cli/index.ts",
+    "api": "bun run src/api/index.ts",
+    "api:dev": "bun --watch run src/api/index.ts",
     "test": "bun test",
     "test:e2e": "RUN_LIVE=1 bun test tests/e2e.test.ts",
     "knip": "knip-bun",
@@ -26,6 +26,7 @@
     "@mastra/core": "^1.41.0",
     "@openrouter/ai-sdk-provider": "^2.9.0",
     "@scalar/hono-api-reference": "^0.11.3",
+    "open-apify": "workspace:*",
     "open-extract": "workspace:*",
     "open-search": "workspace:*",
     "zod": "^4.4.3",

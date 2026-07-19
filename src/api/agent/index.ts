@@ -1,9 +1,9 @@
 import { Agent } from "@mastra/core/agent";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
-import { crunchbaseTools } from "../tools/crunchbase.ts";
-import { linkedinTools } from "../tools/linkedin.ts";
-import { type RunContext } from "../tools/sink.ts";
-import { webTools } from "../tools/web.ts";
+import { type RunContext } from "./sink.ts";
+import { crunchbaseTools } from "./tools/crunchbase.ts";
+import { linkedinTools } from "./tools/linkedin.ts";
+import { webTools } from "./tools/web.ts";
 
 export const DEFAULT_MODEL = process.env.OPENCLAY_MODEL ?? "google/gemini-3.1-flash-lite";
 

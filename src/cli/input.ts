@@ -1,9 +1,17 @@
-import type { ActionSpec } from "../core/action.ts";
-import type { RunRequest } from "../core/http.ts";
-import type { Row } from "../core/types.ts";
+import {
+  HttpRowSchema,
+  RequestActionSchema,
+  type HttpRow,
+  type RequestAction,
+  type RunRequest,
+} from "../api/http.ts";
 import type { Flags } from "./args.ts";
 
-function parseCSV(text: string): Row[] {
+type RequestOptions = Pick<RunRequest, "model" | "maxSteps" | "concurrency" | "require">;
+
+const DEFAULT_API_URL = "http://localhost:8080";
+
+function parseCSV(text: string): HttpRow[] {
   const grid: string[][] = [];
   let field = "";
   let record: string[] = [];
@@ -39,33 +47,44 @@ function parseCSV(text: string): Row[] {
   return grid.map((r) => Object.fromEntries(header.map((h, i) => [h.trim(), r[i] ?? ""])));
 }
 
-export async function loadRows(path: string): Promise<Row[]> {
+async function loadRows(path: string): Promise<HttpRow[]> {
   const text = await Bun.file(path).text();
   if (path.toLowerCase().endsWith(".csv")) return parseCSV(text);
-  const data = JSON.parse(text);
-  return Array.isArray(data) ? data : [data];
+  const data: unknown = JSON.parse(text);
+  return Array.isArray(data) ? HttpRowSchema.array().parse(data) : [HttpRowSchema.parse(data)];
 }
 
-export async function loadActionSpec(flags: Flags): Promise<ActionSpec> {
-  if (typeof flags.action === "string") return JSON.parse(await Bun.file(flags.action).text());
-  if (typeof flags.instructions !== "string" || typeof flags.template !== "string" || typeof flags.schema !== "string") {
-    console.error("Need --instructions, --template, and --schema (or --action <file>). See --help.");
-    process.exit(1);
-  }
-  return { instructions: flags.instructions, template: flags.template, schema: JSON.parse(flags.schema) };
+export async function loadInputRows(flags: Flags, inputs: HttpRow): Promise<HttpRow[]> {
+  return flags.rows ? loadRows(flags.rows) : [inputs];
 }
 
-export function buildRequestOptions(flags: Flags): Pick<RunRequest, "model" | "maxSteps" | "concurrency" | "require"> {
-  const opts: Pick<RunRequest, "model" | "maxSteps" | "concurrency" | "require"> = {};
-  if (typeof flags.model === "string") opts.model = flags.model;
-  if (typeof flags["max-steps"] === "string") {
-    const n = Number(flags["max-steps"]);
-    if (Number.isFinite(n)) opts.maxSteps = n;
+export function prepareRows(rows: HttpRow[]): HttpRow[] {
+  return rows.map((row) =>
+    Object.fromEntries(Object.entries(row).filter(([, value]) => value !== undefined)),
+  );
+}
+
+export function resolveApiUrl(flags: Flags): string {
+  return flags["api-url"] ?? process.env.OPENCLAYGENT_API_URL ?? DEFAULT_API_URL;
+}
+
+export async function loadActionSpec(flags: Flags): Promise<RequestAction> {
+  if (flags.action) {
+    const action: unknown = JSON.parse(await Bun.file(flags.action).text());
+    return RequestActionSchema.parse(action);
   }
-  if (typeof flags.concurrency === "string") {
-    const n = Number(flags.concurrency);
-    if (Number.isFinite(n)) opts.concurrency = n;
+  if (!flags.instructions || !flags.template || !flags.schema) {
+    throw new Error("Need --instructions, --template, and --schema (or --action <file>). See --help.");
   }
-  if (typeof flags.require === "string") opts.require = flags.require;
+  const schema: unknown = JSON.parse(flags.schema);
+  return RequestActionSchema.parse({ instructions: flags.instructions, template: flags.template, schema });
+}
+
+export function buildRequestOptions(flags: Flags): RequestOptions {
+  const opts: RequestOptions = {};
+  if (flags.model) opts.model = flags.model;
+  if (flags["max-steps"]) opts.maxSteps = flags["max-steps"];
+  if (flags.concurrency) opts.concurrency = flags.concurrency;
+  if (flags.require) opts.require = flags.require;
   return opts;
 }

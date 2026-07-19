@@ -19,18 +19,23 @@ function parseSpec(spec: string): { parts: string[]; nullable: boolean } {
   return { parts, nullable };
 }
 
+function enumType(values: string[]): z.ZodTypeAny {
+  const [first, ...rest] = values;
+  return first ? z.enum([first, ...rest]) : z.string();
+}
+
 function baseType(parts: string[]): z.ZodTypeAny {
-  if (parts.length >= 2) return z.enum(parts as [string, ...string[]]);
+  if (parts.length >= 2) return enumType(parts);
 
   const token = (parts[0] ?? "string").toLowerCase();
   if (token.startsWith("enum:")) {
-    return z.enum(token.slice(5).split(",").map((t) => t.trim()) as [string, ...string[]]);
+    return enumType(token.slice(5).split(",").map((part) => part.trim()));
   }
   return PRIMS[token]?.() ?? z.string();
 }
 
 function fieldToZod(spec: unknown): z.ZodTypeAny {
-  if (Array.isArray(spec)) return z.enum(spec.map(String) as [string, ...string[]]);
+  if (Array.isArray(spec)) return enumType(spec.map(String));
   const { parts, nullable } = parseSpec(String(spec));
   const base = baseType(parts);
   return nullable ? base.nullable() : base;

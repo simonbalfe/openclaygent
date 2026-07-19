@@ -1,47 +1,26 @@
 import { createTool } from "@mastra/core/tools";
+import { runActor } from "open-apify";
 import { z } from "zod";
-import { debug } from "../core/debug.ts";
-import type { ToolStepType } from "../core/types.ts";
-import { assertVerifiedUrl, clip, record, recordEvidence, type RunContext } from "./sink.ts";
+import { debug } from "../../core/debug.ts";
+import type { ToolStepType } from "../../core/types.ts";
+import { assertVerifiedUrl, clip, record, recordEvidence, type RunContext } from "../sink.ts";
 
-const APIFY = "https://api.apify.com/v2";
-
-interface ApifyRun {
-  id: string;
-  status: string;
-  defaultDatasetId: string;
-}
-
-async function runActor<T>(actor: string, input: unknown): Promise<T[]> {
+async function actorItems<T>(actor: string, input: unknown, itemSchema: z.ZodType<T>): Promise<T[]> {
   const token = process.env.APIFY_API_TOKEN;
   if (!token) throw new Error("APIFY_API_TOKEN is not set");
-  const started = performance.now();
   debug("apify", `${actor} start ${JSON.stringify(input)}`);
-  const start = await fetch(`${APIFY}/acts/${actor}/runs?token=${token}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(input),
+  const result = await runActor<T>({
+    actor,
+    input,
+    itemSchema,
+    token,
+    onStatus: (run) => debug("apify", `${actor} run ${run.id} status ${run.status}`),
   });
-  if (!start.ok) throw new Error(`Apify ${actor} ${start.status}: ${(await start.text()).slice(0, 300)}`);
-  let run = ((await start.json()) as { data: ApifyRun }).data;
-
-  const deadline = Date.now() + 150_000;
-  while (run.status === "READY" || run.status === "RUNNING") {
-    if (Date.now() > deadline) throw new Error(`Apify ${actor} timed out (run ${run.id})`);
-    const poll = await fetch(`${APIFY}/actor-runs/${run.id}?token=${token}&waitForFinish=30`);
-    if (!poll.ok) throw new Error(`Apify ${actor} poll ${poll.status}: ${(await poll.text()).slice(0, 300)}`);
-    run = ((await poll.json()) as { data: ApifyRun }).data;
-    debug("apify", `${actor} run ${run.id} status ${run.status}`);
-  }
-
-  const itemsRes = await fetch(`${APIFY}/datasets/${run.defaultDatasetId}/items?token=${token}`);
-  if (!itemsRes.ok) throw new Error(`Apify ${actor} items ${itemsRes.status}`);
-  const items = (await itemsRes.json()) as T[];
   debug(
     "apify",
-    `${actor} run ${run.id} ${run.status} → ${items.length} items ${Math.round(performance.now() - started)}ms`,
+    `${actor} run ${result.runId} ${result.status} → ${result.items.length} items ${result.durationMs}ms`,
   );
-  return items;
+  return result.items;
 }
 
 interface StepView {
@@ -55,6 +34,7 @@ interface ApifyToolSpec<S extends z.ZodTypeAny, Raw, Item> {
   description: string;
   type: ToolStepType;
   inputSchema: S;
+  rawSchema: z.ZodType<Raw>;
   outputKey: string;
   single?: boolean;
   prepare: (input: z.output<S>) => {
@@ -80,7 +60,7 @@ export function apifyTool<S extends z.ZodTypeAny, Raw, Item>(
     execute: async (input: z.output<S>) => {
       const { actor, actorInput, query, guard } = spec.prepare(input);
       if (guard) assertVerifiedUrl(context, guard.url, guard.hint);
-      const items = await runActor<Raw>(actor, actorInput);
+      const items = await actorItems(actor, actorInput, spec.rawSchema);
       const mapped = spec.map(items, input);
       for (const item of mapped) {
         const url = spec.sourceUrl?.(item);

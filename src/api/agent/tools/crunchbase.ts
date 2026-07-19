@@ -1,38 +1,41 @@
 import { z } from "zod";
 import { apifyTool } from "./apify.ts";
-import type { RunContext } from "./sink.ts";
+import type { RunContext } from "../sink.ts";
 
 const DEFAULT_ACTOR = "parseforge~crunchbase-scraper";
 const ORG_URL = /crunchbase\.com\/organization\//i;
 
-interface RawOrg {
-  name?: string;
-  cbUrl?: string;
-  crunchbaseUrl?: string;
-  url?: string;
-  website?: string;
-  founded?: string | number;
-  foundedOn?: string;
-  headquarters?: string;
-  city?: string;
-  region?: string;
-  country?: string;
-  employeeCount?: string;
-  industries?: string[];
-  totalFundingUsd?: number;
-  totalFunding?: number;
-  lastRoundType?: string;
-  lastFundingType?: string;
-  lastRoundAmountUsd?: number;
-  lastFundingAmountUsd?: number;
-  lastRoundDate?: string;
-  lastFundingOn?: string;
-  founders?: ({ name?: string; role?: string; title?: string } | string)[];
-  leadInvestors?: string[];
-  investors?: ({ name?: string } | string)[];
-  ipoStatus?: string;
-  operatingStatus?: string;
-}
+const NamedEntitySchema = z.union([z.string(), z.object({ name: z.string().optional() })]);
+const RawOrgSchema = z.object({
+  name: z.string().optional(),
+  cbUrl: z.string().optional(),
+  crunchbaseUrl: z.string().optional(),
+  url: z.string().optional(),
+  website: z.string().optional(),
+  founded: z.union([z.string(), z.number()]).optional(),
+  foundedOn: z.string().optional(),
+  headquarters: z.string().optional(),
+  city: z.string().optional(),
+  region: z.string().optional(),
+  country: z.string().optional(),
+  employeeCount: z.string().optional(),
+  industries: z.array(z.string()).optional(),
+  totalFundingUsd: z.number().optional(),
+  totalFunding: z.number().optional(),
+  lastRoundType: z.string().optional(),
+  lastFundingType: z.string().optional(),
+  lastRoundAmountUsd: z.number().optional(),
+  lastFundingAmountUsd: z.number().optional(),
+  lastRoundDate: z.string().optional(),
+  lastFundingOn: z.string().optional(),
+  founders: z.array(NamedEntitySchema).optional(),
+  leadInvestors: z.array(z.string()).optional(),
+  investors: z.array(NamedEntitySchema).optional(),
+  ipoStatus: z.string().optional(),
+  operatingStatus: z.string().optional(),
+});
+
+type RawOrg = z.infer<typeof RawOrgSchema>;
 
 function nameOf(x: { name?: string } | string | undefined): string {
   return typeof x === "string" ? x : (x?.name ?? "");
@@ -44,6 +47,7 @@ export function crunchbaseTools(context: RunContext) {
     description:
       "FALLBACK ONLY. Get a company's Crunchbase funding & firmographics as structured data — total funding, latest round (type, amount, date), investors, founders, employee range, HQ, founded year, IPO status. Crunchbase is bot-walled, so call this ONLY after web_search has failed to pin the funding/firmographic facts from open sources. Costs Apify credits — call at most once per company. Pass the crunchbase.com/organization URL if one appeared in search results, otherwise the exact company name.",
     type: "crunchbase",
+    rawSchema: RawOrgSchema,
     inputSchema: z.object({
       company: z
         .string()

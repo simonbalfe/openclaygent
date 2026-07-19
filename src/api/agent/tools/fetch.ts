@@ -1,7 +1,7 @@
 import { createTool } from "@mastra/core/tools";
 import { extract, type ExtractAttempt } from "open-extract";
 import { z } from "zod";
-import { debug } from "../core/debug.ts";
+import { debug } from "../../core/debug.ts";
 import {
   assertVerifiedUrl,
   clip,
@@ -10,7 +10,7 @@ import {
   record,
   recordEvidence,
   type RunContext,
-} from "./sink.ts";
+} from "../sink.ts";
 
 function trailEntry(attempt: ExtractAttempt): string {
   const detail = attempt.detail ? ` (${attempt.detail})` : "";

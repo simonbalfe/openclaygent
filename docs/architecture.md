@@ -65,7 +65,7 @@ flowchart LR
 
 ## The unit: an action
 
-An **action** (`src/core/types.ts`, `Action<S>`) is a reusable research brief. It mirrors
+An **action** (`src/api/core/types.ts`, `Action<S>`) is a reusable research brief. It mirrors
 Clay's `use-ai` action from the catalog. Five parts:
 
 | Field | Role |
@@ -81,17 +81,17 @@ fixed, the row varies.
 
 ## The loop
 
-`run(action, row, opts)` in `src/core/engine.ts` is the core unit. Flow:
+`run(action, row, opts)` in `src/api/core/engine.ts` is the core unit. Flow:
 
 1. **Conditional gate** — if `conditionalRun` returns false, return immediately with
    `skipped: true`, zero tokens. This is Clay's #1 credit saver.
 2. **Template fill** — `{{field}}` slots are replaced from the row; missing fields are
    marked `[MISSING:field]` and warned, not failed.
-3. **Agent loop** — a fresh Mastra agent (`src/core/agent.ts`) runs with two web tools plus
+3. **Agent loop** — a fresh Mastra agent (`src/api/agent/index.ts`) runs with two web tools plus
    optional LinkedIn and Crunchbase enrichment tools when `APIFY_API_TOKEN` is set, and the
    tuned research behaviour, looping reason → tool → observe until it answers. The system
    context stacks three layers, fixed-first for stable prompts across rows: the
-   research doctrine (`BEHAVIOUR` in `src/core/agent.ts` — search/navigation/evidence/answer
+   research doctrine (`BEHAVIOUR` in `src/api/agent/index.ts` — search/navigation/evidence/answer
    discipline, our equivalent of Claygent's hidden tuned system prompt), then the action's
    `instructions`, then the templated row task. Doctrine rules lose to action rules on
    conflict.
@@ -99,7 +99,7 @@ fixed, the row varies.
    Zod schema (see `decisions.md` for why it must be separate).
 5. **Finalization fallback** — if the loop returns no structured answer (a reasoning model
    exhausting its step budget mid-tool-call is the usual cause), a separate tools-disabled
-   finalizer (`buildFinalizer`, `src/core/agent.ts`) is handed the serialized findings from
+   finalizer (`buildFinalizer`, `src/api/agent/index.ts`) is handed the serialized findings from
    the run's `Sink` and forced to emit the schema from those alone. See `decisions.md`.
 6. **Return the contract** — `RunResult<S>`: `result`, `sources`, `agentLog`, `tokens`,
    `durationMs`, `model`.
@@ -113,7 +113,7 @@ rather than rejecting the whole batch, so one bad row never discards the others.
 
 ## The tools
 
-`src/tools/web.ts` builds two tools **per run**, bound to a `Sink` so every URL and step
+`src/api/agent/tools/web.ts` builds two tools **per run**, bound to a `Sink` so every URL and step
 is recorded without global state:
 
 - `web_search(query)` — a thin adapter around the framework-agnostic `packages/open-search`
@@ -142,7 +142,7 @@ input, or a link on a page already fetched. See decisions.md (No fabricated URLs
 
 ## The contract
 
-Every run returns `RunResult<S>` (`src/core/types.ts`):
+Every run returns `RunResult<S>` (`src/api/core/types.ts`):
 
 - `result` — the schema-shaped answer, or null (null when skipped, when both the agent
   loop and the finalization fallback failed to produce structured output, or when the row
@@ -168,32 +168,29 @@ Every run returns `RunResult<S>` (`src/core/types.ts`):
 
 | File | Role |
 |---|---|
-| `src/core/types.ts` | `Action` primitive, `RunResult` contract, `defineAction` helper |
-| `src/tools/web.ts` | thin assembler — `webTools(context)` returns `web_search` + `fetch_page` from `search.ts` and `fetch.ts` |
-| `src/tools/search.ts` | thin `web_search` adapter: `open-search.search(query)` → evidence and step recording |
-| `src/tools/fetch.ts` | thin `fetch_page` adapter: URL guard → `open-extract.extract(url)` → evidence and step recording |
+| `src/api/core/types.ts` | `Action` primitive, `RunResult` contract, `defineAction` helper |
+| `src/api/agent/tools/web.ts` | thin assembler — `webTools(context)` returns `web_search` + `fetch_page` from `search.ts` and `fetch.ts` |
+| `src/api/agent/tools/search.ts` | thin `web_search` adapter: `open-search.search(query)` → evidence and step recording |
+| `src/api/agent/tools/fetch.ts` | thin `fetch_page` adapter: URL guard → `open-extract.extract(url)` → evidence and step recording |
 | `packages/open-search/` | isolated Bun/TypeScript workspace package: SearXNG→Exa→Tavily ladder, diagnostics, standalone CLI, and SearXNG service configuration |
 | `packages/open-extract/` | isolated Bun/TypeScript workspace package: URL retrieval ladder, HTML/PDF extraction, bounded Markdown, Patchright service, and standalone CLI |
-| `src/tools/sink.ts` | the per-run context (sources, `seen` URL-provenance set, agent log, `onStep`) + shared recording and URL-provenance helpers |
-| `src/tools/apify.ts` | Apify start→poll→read-dataset helper and the `apifyTool` factory shared by the LinkedIn and Crunchbase tools |
-| `src/tools/linkedin.ts` | `linkedin_profile` / `linkedin_posts` / `linkedin_post_reactions` / `linkedin_find_people` / `linkedin_company` (Apify HarvestAPI actors, each overridable via `APIFY_LINKEDIN_*_ACTOR` with the HarvestAPI ids as defaults; registered only when `APIFY_API_TOKEN` is set) |
-| `src/tools/crunchbase.ts` | `crunchbase_company` — **fallback-only** Crunchbase funding/firmographics via an Apify actor (`CRUNCHBASE_ACTOR`, default `parseforge~crunchbase-scraper`); registered only when `APIFY_API_TOKEN` is set |
-| `src/core/agent.ts` | per-run OpenRouter provider, default model, research behaviour, `buildAgent`, tools-disabled `buildFinalizer` |
-| `src/core/debug.ts` | `debug(scope, message)` + `reason(e)` — API stderr trace lines gated on `OPENCLAY_DEBUG`; covers adapter outcomes, Apify status, LLM calls, and engine pass boundaries. The standalone packages expose their own `--debug` flags. |
-| `src/core/engine.ts` | `run` (one row), `runTable` (a table), template fill, conditional gate, and finalization fallback (`serializeFindings` + `buildFinalizer`) |
-| `src/core/action.ts` | `ActionSpec` (the serialized brief: instructions · template · schema) + `buildAction`, owned by the API runtime |
-| `src/core/http.ts` | shared validated `POST /run` request and response contract used by the API and thin CLI client |
-| `src/core/schema.ts` | `buildSchema` — turn a JSON Schema / short form into the action's Zod `output` |
-| `src/cli.ts` | thin CLI entry: flags/local files → `POST /run` → render; never imports the engine |
-| `src/cli/args.ts` | `parseArgs`, `Flags`/`Parsed` types, `HELP` text |
-| `src/cli/input.ts` | `parseCSV`, `loadRows`, `loadActionSpec`, `buildRequestOptions` — local flags/files → HTTP request |
-| `src/cli/client.ts` | validated HTTP client for `POST /run` |
-| `src/cli/render.ts` | terminal response presentation |
-| `src/api.ts` | HTTP entry: `@hono/zod-openapi` `POST /run` → `buildAction` → `runTable`, plus `/openapi.json` + Scalar `/docs` + `/health` |
+| `packages/open-apify/` | isolated actor runner: start, poll, timeout, dataset retrieval, and run metadata; no Mastra or Openclaygent runtime dependency |
+| `src/api/agent/sink.ts` | the per-run context (sources, `seen` URL-provenance set, agent log, `onStep`) + shared recording and URL-provenance helpers |
+| `src/api/agent/tools/apify.ts` | Mastra/provenance adapter around `open-apify`, shared by the LinkedIn and Crunchbase tools |
+| `src/api/agent/tools/linkedin.ts` | `linkedin_profile` / `linkedin_posts` / `linkedin_post_reactions` / `linkedin_find_people` / `linkedin_company` (Apify HarvestAPI actors, each overridable via `APIFY_LINKEDIN_*_ACTOR` with the HarvestAPI ids as defaults; registered only when `APIFY_API_TOKEN` is set) |
+| `src/api/agent/tools/crunchbase.ts` | `crunchbase_company` — **fallback-only** Crunchbase funding/firmographics via an Apify actor (`CRUNCHBASE_ACTOR`, default `parseforge~crunchbase-scraper`); registered only when `APIFY_API_TOKEN` is set |
+| `src/api/agent/index.ts` | per-run OpenRouter provider, default model, research behaviour, `buildAgent`, tools-disabled `buildFinalizer` |
+| `src/api/core/debug.ts` | `debug(scope, message)` + `reason(e)` — API stderr trace lines gated on `OPENCLAY_DEBUG`; covers adapter outcomes, Apify status, LLM calls, and engine pass boundaries. The standalone packages expose their own `--debug` flags. |
+| `src/api/core/engine.ts` | `run` (one row), `runTable` (a table), template fill, conditional gate, and finalization fallback (`serializeFindings` + `buildFinalizer`) |
+| `src/api/core/action.ts` | `ActionSpec` (the serialized brief: instructions · template · schema) + `buildAction`, owned by the API runtime |
+| `src/api/http.ts` | public validated `POST /run` request and response contract used by the API and thin CLI client; independent of runtime core and agent code |
+| `src/api/core/schema.ts` | `buildSchema` — turn a JSON Schema / short form into the action's Zod `output` |
+| `src/cli/` | thin top-level CLI application: `index.ts` entry plus flags, local input, HTTP client, and rendering; never imports the engine |
+| `src/api/` | HTTP application and complete Claygent runtime: contract, core flow, agent, tools, and HTTP composition |
 
 ## CLI
 
-`src/cli.ts` is a thin client. It loads an action and rows from local flags/files, calls
+`src/cli/index.ts` is a thin client. It loads an action and rows from local flags/files, calls
 `POST /run`, validates the response, and prints it. Research always executes in the API,
 including local installs. The endpoint defaults to `http://localhost:8080`; use `--api-url`
 or `OPENCLAYGENT_API_URL` for a remote service.
@@ -220,7 +217,7 @@ bun run cli -- \
 
 `--schema` accepts **standard JSON Schema** (the conventional interchange — converted to
 Zod at the boundary via `zod-from-json-schema`) **or** a short form for flat outputs:
-`string` | `number` | `boolean` | `a|b|c` (enum) | trailing `?` for nullable. `src/core/schema.ts`
+`string` | `number` | `boolean` | `a|b|c` (enum) | trailing `?` for nullable. `src/api/core/schema.ts`
 detects which (a real JSON Schema has `type:"object"`/`properties`) and routes accordingly;
 either way the engine receives a Zod schema. By default stdout carries only the
 answer — `{ result, reasoning, sources }` (one object, or an array under `--rows`); `--json` prints the full
@@ -232,7 +229,7 @@ many rows run in parallel (default 5, sent as `concurrency` in the request). The
 
 ## HTTP API
 
-`src/api.ts` is the sole engine entry point. It validates the HTTP request, calls
+`src/api/index.ts` is the sole engine entry point. It validates the HTTP request, calls
 `buildAction` (`core/action.ts`) and `runTable`, and returns the results. The CLI reaches this
 same path over HTTP rather than carrying a second copy of the runtime.
 

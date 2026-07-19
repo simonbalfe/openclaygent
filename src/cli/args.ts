@@ -32,7 +32,26 @@ By default stdout carries the answer: { result, reasoning, sources } — the sch
 result, a one-line why, and the URLs behind it (an array for --rows). The CLI always sends
 the run to the Openclaygent API; steps and tokens are there when you ask (--json).`;
 
-export type Flags = Record<string, string | boolean>;
+const FlagsSchema = z
+  .object({
+    action: z.string().optional(),
+    instructions: z.string().optional(),
+    template: z.string().optional(),
+    schema: z.string().optional(),
+    require: z.string().optional(),
+    rows: z.string().optional(),
+    model: z.string().optional(),
+    "max-steps": z.coerce.number().int().positive().optional(),
+    concurrency: z.coerce.number().int().positive().optional(),
+    "api-url": z.string().optional(),
+    out: z.string().optional(),
+    json: z.boolean().default(false),
+    pretty: z.boolean().default(false),
+    help: z.boolean().default(false),
+  })
+  .strict();
+
+export type Flags = z.infer<typeof FlagsSchema>;
 
 export interface Parsed {
   flags: Flags;
@@ -40,7 +59,7 @@ export interface Parsed {
 }
 
 export function parseArgs(argv: string[]): Parsed {
-  const flags: Flags = {};
+  const flags: Record<string, string | boolean> = {};
   const inputs: Record<string, string> = {};
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
@@ -58,5 +77,6 @@ export function parseArgs(argv: string[]): Parsed {
       i++;
     }
   }
-  return { flags, inputs };
+  return { flags: FlagsSchema.parse(flags), inputs };
 }
+import { z } from "zod";

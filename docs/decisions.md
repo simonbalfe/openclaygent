@@ -112,7 +112,7 @@ What does NOT work, and why the fallback is a separate pass:
   ("Some reasoning_details entries were removed because they were missing signatures"), and
   reasoning cannot be disabled per call ("Reasoning is mandatory for this endpoint").
 
-So the fallback is a clean single-turn call (`buildFinalizer`, `src/core/agent.ts`): a
+So the fallback is a clean single-turn call (`buildFinalizer`, `src/api/agent/index.ts`): a
 tools-less agent gets the full bounded tool evidence serialized from `RunContext.evidence`
 (`serializeEvidence`) as plain text and is forced to emit the schema from those alone. The
 agent trace is intentionally preview-only and is never used as finalizer input. Single-turn → no broken reasoning
@@ -387,8 +387,9 @@ pages and is ~150 lines we control.
 ## LinkedIn via Apify HarvestAPI actors, env-gated
 
 LinkedIn pages are login-walled, so the fetch cascade can never read them. Five tools in
-`src/tools/linkedin.ts` call HarvestAPI's no-cookie Apify actors through the shared asynchronous
-start, poll, and dataset-read flow in `src/tools/apify.ts`:
+`src/api/agent/tools/linkedin.ts` call HarvestAPI's no-cookie Apify actors through the framework-independent
+start, poll, and dataset-read flow in `packages/open-apify`, wrapped with Mastra and provenance
+recording by `src/api/agent/tools/apify.ts`:
 `linkedin-profile-scraper` (input `{url}`), `linkedin-profile-posts` (input
 `{targetUrls, maxPosts}`), `linkedin-post-reactions` (input `{posts, maxItems}`),
 `linkedin-company-employees` (input `{companies, jobTitles?, searchQuery?, maxItems}` —
@@ -400,6 +401,12 @@ thousands. The tools register only when `APIFY_API_TOKEN` is set — without it 
 has no LinkedIn capability and the doctrine's "never fetch linkedin.com" rule still
 applies. Cost is per item (~$2–4 per 1k), which is why the doctrine and tool descriptions
 both say call once per target with small max counts.
+
+Each actor adapter supplies a Zod item schema to `open-apify`. The package validates the
+dataset before returning typed items, and the TypeScript types are inferred from those schemas.
+HTTP responses, CLI JSON, model pass envelopes, SearXNG JSON, and JSON-LD records follow the
+same parse-at-the-boundary rule. Internal action, trace, and worker structures remain ordinary
+TypeScript types because they are constructed entirely by checked code.
 
 ## Documentation synchronization is review-driven
 
@@ -418,12 +425,12 @@ because the independent contract deliberately accepts only a URL.
 
 Crunchbase is CF-Turnstile-walled, so `fetch_page` can't get it and the behaviour prompt says
 never to try. The primary path for funding/firmographics is still **search the mirrored open
-sources** (Tracxn, Dealroom, Sacra, news). `crunchbase_company` (`src/tools/crunchbase.ts`) is
+sources** (Tracxn, Dealroom, Sacra, news). `crunchbase_company` (`src/api/agent/tools/crunchbase.ts`) is
 a **last resort**: the agent calls it only when that search fails to pin the round/total/
 investors — gated by the tool description and the behaviour prompt, not by code. SearXNG
 usually surfaces the `crunchbase.com/organization/<slug>` URL in search results even though the
 page is unfetchable, so the agent passes that URL to the actor (name-search is the secondary
-mode). It runs through the shared `runActor` (`apify.ts`), env-gated on `APIFY_API_TOKEN` like
+mode). It runs through the shared `open-apify` actor runner, env-gated on `APIFY_API_TOKEN` like
 the LinkedIn tools.
 
 The actor id is **`CRUNCHBASE_ACTOR` (default `parseforge~crunchbase-scraper`)** because
@@ -444,7 +451,7 @@ prompt rule alone does not stop this, so the guard is in code.
 - **The rule:** a URL may only be fetched or scraped if it is *verified* — it appeared in a
   `web_search` result, in this row's own input, or as a link on a page already fetched this
   run. Anything else is a fabrication and is refused.
-- **The mechanism:** `sink.seen` (`src/tools/sink.ts`) is a set of normalized URLs.
+- **The mechanism:** `sink.seen` (`src/api/agent/sink.ts`) is a set of normalized URLs.
   `noteUrl` adds to it; `search.ts` notes every result URL, `fetch.ts` notes each fetched
   URL **and** every link in the returned text (`noteUrlsInText`), and `engine.run` seeds it
   from the row's values (full URLs and bare domains-as-homepage). `assertVerifiedUrl` throws
@@ -457,7 +464,7 @@ prompt rule alone does not stop this, so the guard is in code.
 - **The recovery path:** the thrown error tells the agent what to do instead (pass the exact
   company name so `linkedin_company`/`crunchbase_company` resolve the page themselves, or
   `web_search` first and use a URL from the results). The behaviour prompt
-  (`src/core/agent.ts`) states the same rule up front so the model rarely hits the guard.
+  (`src/api/agent/index.ts`) states the same rule up front so the model rarely hits the guard.
 - **Why name-search is the preferred LinkedIn/Crunchbase path:** their actors resolve the
   right entity from a name, removing the need for a URL at all. A URL is accepted only when it
   came from search — never constructed. Verified live: `linkedin_company` by name "Hugging
@@ -472,14 +479,16 @@ prompt rule alone does not stop this, so the guard is in code.
 
 ## One runtime behind HTTP
 
-The API (`src/api.ts`) is the only entry point that calls `buildAction` and `runTable`. The
-CLI (`src/cli.ts`) only reads local flags/files, sends the shared `RunRequest` to `POST /run`,
+The API (`src/api/index.ts`) is the only entry point that calls `buildAction` and `runTable`. The
+CLI (`src/cli/index.ts`) only reads local flags/files, sends the shared `RunRequest` to `POST /run`,
 validates `RunResponse`, and renders it. This applies to local setup too: `openclaygent`
 defaults to the Compose API on `localhost:8080`. Keeping the engine out of the CLI prevents
 two execution paths from drifting and makes a remote deployment interchangeable through
 `--api-url` or `OPENCLAYGENT_API_URL`.
 
-The shared contract is in `src/core/http.ts`. The API is `@hono/zod-openapi`, not plain Hono:
+The shared contract is in `src/api/http.ts`. Keeping the wire schema independent of runtime
+core lets the CLI validate requests and responses without depending on the engine or agent.
+The API is `@hono/zod-openapi`, not plain Hono:
 the request/response zod schemas are the
 single source of truth — they validate the body (malformed → `400` before the handler) *and*
 generate `/openapi.json` (served as a Scalar reference at `/docs`). A hand-written spec, or manual

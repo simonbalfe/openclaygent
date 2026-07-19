@@ -1,5 +1,6 @@
 import { tavily } from "@tavily/core";
 import Exa from "exa-js";
+import { z } from "zod";
 import type { SearchAttempt, SearchHit, SearchOptions, SearchProvider, SearchResult } from "./types.ts";
 
 interface Rung {
@@ -7,6 +8,18 @@ interface Rung {
   enabled: boolean;
   execute: (query: string, maxResults: number) => Promise<SearchHit[]>;
 }
+
+const SearxngResponseSchema = z.object({
+  results: z
+    .array(
+      z.object({
+        title: z.string().optional(),
+        url: z.string(),
+        content: z.string().optional(),
+      }),
+    )
+    .optional(),
+});
 
 function debug(message: string): void {
   if (process.env.OPEN_SEARCH_DEBUG === "1") console.error(`[open-search] ${message}`);
@@ -23,7 +36,7 @@ async function searxngSearch(baseUrl: string, query: string, maxResults: number)
   url.searchParams.set("format", "json");
   const response = await fetch(url);
   if (!response.ok) throw new Error(`SearXNG ${response.status}: ${await response.text()}`);
-  const data = (await response.json()) as { results?: { title?: string; url: string; content?: string }[] };
+  const data = SearxngResponseSchema.parse(await response.json());
   return (data.results ?? []).slice(0, maxResults).map((result) => ({
     title: result.title ?? "",
     url: result.url,

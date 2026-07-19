@@ -1,9 +1,11 @@
-import { OpenAPIHono, createRoute } from "@hono/zod-openapi";
+import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { Scalar } from "@scalar/hono-api-reference";
+import { ErrorResponseSchema, RunRequestSchema, RunResponseSchema } from "./http.ts";
 import { buildAction } from "./core/action.ts";
 import { runTable, type RunOptions } from "./core/engine.ts";
-import { ErrorResponseSchema, RunRequestSchema, RunResponseSchema } from "./core/http.ts";
 import type { Row } from "./core/types.ts";
+
+const port = z.coerce.number().int().min(1).max(65_535).catch(8080).parse(process.env.PORT);
 
 const runRoute = createRoute({
   method: "post",
@@ -38,4 +40,4 @@ app.get("/health", (c) => c.json({ ok: true }));
 app.doc("/openapi.json", { openapi: "3.0.0", info: { title: "openclaygent", version: "0.0.1" } });
 app.get("/docs", Scalar({ url: "/openapi.json", pageTitle: "openclaygent API" }));
 
-export default { port: Number(process.env.PORT) || 8080, fetch: app.fetch };
+export default { port, fetch: app.fetch };

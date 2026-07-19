@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { apifyTool } from "./apify.ts";
-import type { RunContext } from "./sink.ts";
+import type { RunContext } from "../sink.ts";
 
 const LINKEDIN_URL = /^https?:\/\/([\w-]+\.)*linkedin\.com\//i;
 const COMPANY_URL = /linkedin\.com\/company\//i;
@@ -13,70 +13,104 @@ const ACTORS = {
   company: process.env.APIFY_LINKEDIN_COMPANY_ACTOR ?? "harvestapi~linkedin-company",
 };
 
-interface RawProfile {
-  firstName?: string;
-  lastName?: string;
-  headline?: string;
-  location?: { linkedinText?: string };
-  about?: string;
-  linkedinUrl?: string;
-  publicIdentifier?: string;
-  followerCount?: number;
-  connectionsCount?: number;
-  currentPosition?: { companyName?: string; position?: string }[];
-  experience?: { position?: string; companyName?: string; duration?: string; location?: string }[];
-}
+const LocationSchema = z.object({ linkedinText: z.string().optional() });
+const EmailSchema = z.union([
+  z.string().transform((address) => ({ address })),
+  z
+    .object({
+      email: z.string().optional(),
+      status: z.string().optional(),
+      qualityScore: z.number().optional(),
+    })
+    .transform(({ email: address, status, qualityScore }) => ({ address, status, qualityScore })),
+]);
+const FoundedYearSchema = z.union([
+  z.number(),
+  z.object({ year: z.number().optional() }).transform(({ year }) => year ?? null),
+  z.null(),
+]);
+const RawProfileSchema = z.object({
+  firstName: z.string().optional(),
+  lastName: z.string().optional(),
+  headline: z.string().optional(),
+  location: LocationSchema.optional(),
+  about: z.string().optional(),
+  linkedinUrl: z.string().optional(),
+  publicIdentifier: z.string().optional(),
+  followerCount: z.number().optional(),
+  connectionsCount: z.number().optional(),
+  experience: z
+    .array(
+      z.object({
+        position: z.string().optional(),
+        companyName: z.string().optional(),
+        duration: z.string().optional(),
+      }),
+    )
+    .optional(),
+});
+const RawPostSchema = z.object({
+  linkedinUrl: z.string().optional(),
+  content: z.string().optional(),
+  postedAt: z.object({ postedAgoText: z.string().optional(), date: z.string().optional() }).optional(),
+  engagement: z
+    .object({ likes: z.number().optional(), comments: z.number().optional(), shares: z.number().optional() })
+    .optional(),
+});
+const RawEmployeeSchema = z.object({
+  firstName: z.string().optional(),
+  lastName: z.string().optional(),
+  name: z.string().optional(),
+  headline: z.string().optional(),
+  position: z.string().optional(),
+  summary: z.string().optional(),
+  currentPositions: z
+    .array(z.object({ companyName: z.string().optional(), title: z.string().optional(), current: z.boolean().optional() }))
+    .optional(),
+  location: LocationSchema.optional(),
+  linkedinUrl: z.string().optional(),
+  email: EmailSchema.optional(),
+  emails: z.array(z.string()).optional(),
+  contactEmails: z.array(z.string()).optional(),
+});
+const RawReactionSchema = z.object({
+  reactionType: z.string().optional(),
+  actor: z
+    .object({ name: z.string().optional(), position: z.string().optional(), linkedinUrl: z.string().optional() })
+    .optional(),
+});
+const RawCompanySchema = z.object({
+  name: z.string().optional(),
+  linkedinUrl: z.string().optional(),
+  website: z.string().optional(),
+  tagline: z.string().optional(),
+  description: z.string().optional(),
+  foundedOn: FoundedYearSchema.optional(),
+  employeeCount: z.number().optional(),
+  employeeCountRange: z.object({ start: z.number().optional(), end: z.number().optional() }).optional(),
+  followerCount: z.number().optional(),
+  industries: z.array(z.object({ name: z.string().optional(), title: z.string().optional() })).optional(),
+  specialities: z.array(z.string()).optional(),
+  locations: z
+    .array(
+      z.object({
+        city: z.string().optional(),
+        geographicArea: z.string().optional(),
+        country: z.string().optional(),
+        headquarter: z.boolean().optional(),
+      }),
+    )
+    .optional(),
+});
 
-interface RawPost {
-  id?: string;
-  linkedinUrl?: string;
-  content?: string;
-  postedAt?: { timestamp?: number; postedAgoText?: string; date?: string };
-  engagement?: {
-    likes?: number;
-    comments?: number;
-    shares?: number;
-    reactions?: { type?: string; count?: number }[];
-  };
-  repostedBy?: unknown;
-  type?: string;
-}
+type RawProfile = z.infer<typeof RawProfileSchema>;
+type RawPost = z.infer<typeof RawPostSchema>;
+type RawEmployee = z.infer<typeof RawEmployeeSchema>;
+type RawReaction = z.infer<typeof RawReactionSchema>;
+type RawCompany = z.infer<typeof RawCompanySchema>;
 
-interface RawEmployee {
-  firstName?: string;
-  lastName?: string;
-  name?: string;
-  headline?: string;
-  position?: string;
-  summary?: string;
-  currentPositions?: { companyName?: string; title?: string; current?: boolean }[];
-  location?: { linkedinText?: string };
-  linkedinUrl?: string;
-  email?: string | { email?: string; status?: string; qualityScore?: number };
-  emails?: string[];
-  contactEmails?: string[];
-}
-
-interface RawReaction {
-  reactionType?: string;
-  actor?: { name?: string; position?: string; linkedinUrl?: string };
-  postId?: string;
-}
-
-interface RawCompany {
-  name?: string;
-  universalName?: string;
-  linkedinUrl?: string;
-  website?: string;
-  tagline?: string;
-  description?: string;
-  foundedOn?: { year?: number } | number | null;
-  employeeCount?: number;
-  employeeCountRange?: { start?: number; end?: number };
-  followerCount?: number;
-  industries?: { name?: string; title?: string }[];
-  specialities?: string[];
-  locations?: { city?: string; geographicArea?: string; country?: string; headquarter?: boolean }[];
+function emailAddress(address?: string): { address: string } | null {
+  return address ? { address } : null;
 }
 
 export function linkedinTools(context: RunContext) {
@@ -85,6 +119,7 @@ export function linkedinTools(context: RunContext) {
     description:
       "Get a person's LinkedIn profile as structured data (name, headline, location, about, experience, follower count). Use for LinkedIn facts instead of fetching linkedin.com pages, which are login-walled. Costs credits — call once per person.",
     type: "linkedin",
+    rawSchema: RawProfileSchema,
     inputSchema: z.object({
       url: z.string().describe("LinkedIn profile URL, e.g. https://www.linkedin.com/in/<slug>"),
     }),
@@ -121,6 +156,7 @@ export function linkedinTools(context: RunContext) {
     description:
       "Get the recent LinkedIn posts of a person or company profile: text, date, engagement counts, post URLs. Costs credits per post — keep maxPosts small.",
     type: "linkedin",
+    rawSchema: RawPostSchema,
     inputSchema: z.object({
       profileUrl: z.string().describe("LinkedIn profile or company URL whose posts to fetch."),
       maxPosts: z.number().int().min(1).max(20).default(5),
@@ -153,6 +189,7 @@ export function linkedinTools(context: RunContext) {
     description:
       "Get who reacted to a LinkedIn post: reaction type plus each person's name, position, and profile URL. Costs credits per reaction — keep maxReactions small.",
     type: "linkedin",
+    rawSchema: RawReactionSchema,
     inputSchema: z.object({
       postUrl: z.string().describe("Full LinkedIn post URL."),
       maxReactions: z.number().int().min(1).max(100).default(20),
@@ -179,6 +216,7 @@ export function linkedinTools(context: RunContext) {
     description:
       "Find people at a company via LinkedIn employee search, filtered by job title. Returns name, title, location, profile URL, and (when findEmails is true) a work email if one can be found. Costs credits per profile and 3x with emails — keep maxItems small and filter by title.",
     type: "linkedin",
+    rawSchema: RawEmployeeSchema,
     inputSchema: z.object({
       company: z
         .string()
@@ -221,10 +259,7 @@ export function linkedinTools(context: RunContext) {
           company: current?.companyName ?? "",
           location: p.location?.linkedinText ?? "",
           linkedinUrl: p.linkedinUrl ?? "",
-          email:
-            typeof p.email === "object" && p.email
-              ? { address: p.email.email, status: p.email.status, qualityScore: p.email.qualityScore }
-              : (p.email ?? p.emails?.[0] ?? p.contactEmails?.[0] ?? null),
+          email: p.email ?? emailAddress(p.emails?.[0] ?? p.contactEmails?.[0]),
         };
       }),
     view: (p) => ({ title: p.name, url: p.linkedinUrl, preview: p.title }),
@@ -236,6 +271,7 @@ export function linkedinTools(context: RunContext) {
     description:
       "Get a company's LinkedIn profile as structured data: exact employee count, size range, industry, founded year, headquarters, follower count, website, and description. Use for firmographic facts (headcount, industry, HQ) instead of fetching linkedin.com pages, which are login-walled. Pass the exact COMPANY NAME and let the tool resolve the page — never guess or construct a /company/<slug> URL, as the wrong slug returns a stale decoy page. Only pass a URL if it appeared verbatim in a web_search result. Costs credits — call once per company.",
     type: "linkedin",
+    rawSchema: RawCompanySchema,
     inputSchema: z.object({
       company: z
         .string()
@@ -271,7 +307,7 @@ export function linkedinTools(context: RunContext) {
           employeeCountRange:
             range?.start != null ? `${range.start}-${range.end ?? ""}`.replace(/-$/, "+") : null,
           followers: c.followerCount ?? null,
-          foundedYear: typeof c.foundedOn === "object" ? (c.foundedOn?.year ?? null) : (c.foundedOn ?? null),
+          foundedYear: c.foundedOn ?? null,
           industry: c.industries?.[0]?.title ?? c.industries?.[0]?.name ?? "",
           specialities: (c.specialities ?? []).slice(0, 10),
           headquarters: hq ? [hq.city, hq.geographicArea, hq.country].filter(Boolean).join(", ") : "",

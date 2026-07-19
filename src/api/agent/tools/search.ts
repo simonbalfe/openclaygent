@@ -1,7 +1,7 @@
 import { createTool } from "@mastra/core/tools";
 import { search } from "open-search";
 import { z } from "zod";
-import { clip, noteUrl, record, recordEvidence, type RunContext } from "./sink.ts";
+import { clip, noteUrl, record, recordEvidence, type RunContext } from "../sink.ts";
 
 export function webSearchTool(context: RunContext) {
   return createTool({
