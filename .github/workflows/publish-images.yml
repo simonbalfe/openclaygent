@@ -64,7 +64,7 @@ jobs:
             context: .
             file: Dockerfile
           - name: openclaygent-searxng
-            image: openclaygent-searxng
+            image: openclaygent-search
             change: searxng
             context: packages/open-search/searxng
             file: packages/open-search/searxng/Dockerfile

@@ -36,7 +36,7 @@ services:
     restart: unless-stopped
 
   searxng:
-    image: ghcr.io/simonbalfe/openclaygent-searxng:latest
+    image: ghcr.io/simonbalfe/openclaygent-search:latest
     pull_policy: always
     container_name: openclaygent-searxng
     ports:
