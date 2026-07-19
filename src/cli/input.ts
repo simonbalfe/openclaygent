@@ -5,11 +5,12 @@ import {
   type RequestAction,
   type RunRequest,
 } from "../api/http.ts";
+import { z } from "zod";
 import type { Flags } from "./args.ts";
 
 type RequestOptions = Pick<RunRequest, "model" | "maxSteps" | "concurrency" | "require">;
 
-const DEFAULT_API_URL = "http://localhost:8080";
+const ApiUrlSchema = z.url();
 
 function parseCSV(text: string): HttpRow[] {
   const grid: string[][] = [];
@@ -66,7 +67,9 @@ export function prepareRows(rows: HttpRow[]): HttpRow[] {
 }
 
 export function resolveApiUrl(flags: Flags): string {
-  return flags["api-url"] ?? process.env.OPENCLAYGENT_API_URL ?? DEFAULT_API_URL;
+  const value = flags["api-url"] ?? process.env.OPENCLAYGENT_API_URL;
+  if (!value) throw new Error("Set OPENCLAYGENT_API_URL or pass --api-url <url>");
+  return ApiUrlSchema.parse(value);
 }
 
 export async function loadActionSpec(flags: Flags): Promise<RequestAction> {

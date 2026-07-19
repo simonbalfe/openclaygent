@@ -1,6 +1,7 @@
+import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
-import { apifyTool } from "./apify.ts";
-import type { RunContext } from "../sink.ts";
+import { createApifyRunner, recordProviderResults } from "./apify.ts";
+import { assertVerifiedUrl, type RunContext } from "../sink.ts";
 
 const DEFAULT_ACTOR = "parseforge~crunchbase-scraper";
 const ORG_URL = /crunchbase\.com\/organization\//i;
@@ -34,46 +35,42 @@ const RawOrgSchema = z.object({
   ipoStatus: z.string().optional(),
   operatingStatus: z.string().optional(),
 });
-
-type RawOrg = z.infer<typeof RawOrgSchema>;
+const runOrgActor = createApifyRunner(RawOrgSchema);
 
 function nameOf(x: { name?: string } | string | undefined): string {
   return typeof x === "string" ? x : (x?.name ?? "");
 }
 
 export function crunchbaseTools(context: RunContext) {
-  const crunchbase_company = apifyTool(context, {
+  const CompanyInputSchema = z.object({
+    company: z
+      .string()
+      .describe(
+        "Crunchbase organization URL (preferred, e.g. https://www.crunchbase.com/organization/openai) or the exact company name.",
+      ),
+  });
+  const crunchbase_company = createTool({
     id: "crunchbase_company",
     description:
       "FALLBACK ONLY. Get a company's Crunchbase funding & firmographics as structured data — total funding, latest round (type, amount, date), investors, founders, employee range, HQ, founded year, IPO status. Crunchbase is bot-walled, so call this ONLY after web_search has failed to pin the funding/firmographic facts from open sources. Costs Apify credits — call at most once per company. Pass the crunchbase.com/organization URL if one appeared in search results, otherwise the exact company name.",
-    type: "crunchbase",
-    rawSchema: RawOrgSchema,
-    inputSchema: z.object({
-      company: z
-        .string()
-        .describe(
-          "Crunchbase organization URL (preferred, e.g. https://www.crunchbase.com/organization/openai) or the exact company name.",
-        ),
-    }),
-    outputKey: "company",
-    single: true,
-    prepare: ({ company }) => ({
-      actor: process.env.CRUNCHBASE_ACTOR ?? DEFAULT_ACTOR,
-      actorInput: ORG_URL.test(company)
-        ? { startUrls: [{ url: company }], maxItems: 1 }
-        : { searchQuery: company, maxItems: 1 },
-      query: company,
-      guard: ORG_URL.test(company)
-        ? {
-            url: company,
-            hint: "Pass the exact company name instead, or web_search for the crunchbase.com/organization page first.",
-          }
-        : undefined,
-    }),
-    map: (items: RawOrg[], { company }) =>
-      items.slice(0, 1).map((o) => ({
+    inputSchema: CompanyInputSchema,
+    outputSchema: z.object({ company: z.unknown() }),
+    execute: async ({ company }) => {
+      const isUrl = ORG_URL.test(company);
+      if (isUrl) {
+        assertVerifiedUrl(
+          context,
+          company,
+          "Pass the exact company name instead, or web_search for the crunchbase.com/organization page first.",
+        );
+      }
+      const items = await runOrgActor(
+        process.env.CRUNCHBASE_ACTOR ?? DEFAULT_ACTOR,
+        isUrl ? { startUrls: [{ url: company }], maxItems: 1 } : { searchQuery: company, maxItems: 1 },
+      );
+      const mapped = items.slice(0, 1).map((o) => ({
         name: o.name ?? "",
-        crunchbaseUrl: o.cbUrl ?? o.crunchbaseUrl ?? o.url ?? (ORG_URL.test(company) ? company : ""),
+        crunchbaseUrl: o.cbUrl ?? o.crunchbaseUrl ?? o.url ?? (isUrl ? company : ""),
         website: o.website ?? "",
         foundedYear: o.founded ?? o.foundedOn ?? null,
         employeeCount: o.employeeCount ?? null,
@@ -88,13 +85,22 @@ export function crunchbaseTools(context: RunContext) {
         founders: (o.founders ?? []).map(nameOf).filter(Boolean).slice(0, 6),
         leadInvestors: (o.leadInvestors ?? o.investors ?? []).map(nameOf).filter(Boolean).slice(0, 10),
         ipoStatus: o.ipoStatus ?? o.operatingStatus ?? "",
-      })),
-    view: (p) => ({
-      title: p.name,
-      url: p.crunchbaseUrl,
-      preview: `${p.lastRound.type} ${p.lastRound.amountUsd ?? ""} · ${p.totalFundingUsd ?? ""}`,
-    }),
-    sourceUrl: (p) => p.crunchbaseUrl,
+      }));
+      const result = mapped[0] ?? null;
+      recordProviderResults(
+        context,
+        "crunchbase",
+        company,
+        result
+          ? [{
+              title: result.name,
+              url: result.crunchbaseUrl,
+              preview: `${result.lastRound.type} ${result.lastRound.amountUsd ?? ""} · ${result.totalFundingUsd ?? ""}`,
+            }]
+          : [],
+      );
+      return { company: result };
+    },
   });
 
   return { crunchbase_company };

@@ -21,7 +21,7 @@ Options:
   --model <id>            OpenRouter model id (default: google/gemini-3.1-flash-lite).
   --max-steps <n>         Max agent loop iterations (default: 5).
   --concurrency <n>       Rows to research in parallel (default: 5).
-  --api-url <url>         Openclaygent API (default: OPENCLAYGENT_API_URL or localhost:8080).
+  --api-url <url>         Openclaygent API (overrides required OPENCLAYGENT_API_URL).
   --json                  Print the full RunResult envelope (sources, agentLog, tokens)
                           instead of just the result.
   --pretty                Human-readable per-row view with token stats.

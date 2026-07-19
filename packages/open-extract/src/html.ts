@@ -3,8 +3,8 @@ import * as cheerio from "cheerio";
 import type { AnyNode, Element } from "domhandler";
 import { parseHTML } from "linkedom";
 import TurndownService from "turndown";
+import { gfm } from "turndown-plugin-gfm";
 import { z } from "zod";
-import { gfm } from "./gfm.ts";
 
 type Api = cheerio.CheerioAPI;
 type LdNode = Record<string, unknown>;
