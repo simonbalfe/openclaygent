@@ -40,6 +40,10 @@ fi
 
 cd "${DIR}"
 
+if ! command -v docker >/dev/null 2>&1; then
+  echo "Docker is not installed. Setup will install the CLI, but the local API requires Docker Desktop, OrbStack, or Docker Engine with Compose."
+fi
+
 if ! command -v bun >/dev/null 2>&1; then
   need unzip
   echo "Bun not found - installing Bun."

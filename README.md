@@ -60,13 +60,13 @@ One line from nothing:
 curl -fsSL https://raw.githubusercontent.com/simonbalfe/openclaygent/main/scripts/install.sh | bash
 ```
 
-It clones the repo, installs Bun for the native CLI, creates `.env`, prompts for keys (only
-OpenRouter is required), and pulls the published API, search, and fetch images from GHCR.
-When it finishes: API at `http://localhost:8080/docs`, CLI available globally as
-`openclaygent`.
+It clones the repo, installs Bun for the thin CLI, creates `.env`, prompts for keys (only
+OpenRouter is required), pulls the three published images from GHCR, and waits until the API,
+search, and browser services are healthy. When it finishes: API at
+`http://localhost:8080/docs`, CLI available globally as `openclaygent`.
 
 - Already cloned? `bun run setup`
-- Manual instead: `cp .env.example .env && docker compose up -d`, then edit `.env`
+- Manual instead: `cp .env.example .env`, edit `.env`, then `docker compose up -d --wait`
 - No Docker? Run the API with `bun run api`; the CLI still calls it over HTTP. Set `EXA_API_KEY`
   when running without the self-hosted SearXNG service.
 
@@ -115,7 +115,7 @@ The CLI always calls the API at `http://localhost:8080`. Override it with `--api
 ## Use it: HTTP API
 
 ```bash
-docker compose up -d
+docker compose up -d --wait
 curl -s localhost:8080/run -H 'content-type: application/json' -d '{
   "instructions": "Identify which CRM the company uses.",
   "template": "Company: {{company}} ({{domain}})",

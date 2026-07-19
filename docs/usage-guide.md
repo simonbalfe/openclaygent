@@ -20,7 +20,7 @@ If the Docker services are stopped, start them from the installation directory:
 
 ```bash
 cd ~/openclaygent
-docker compose up -d
+docker compose up -d --wait
 ```
 
 ## Research one company
@@ -248,7 +248,7 @@ Then open a new terminal and run `openclaygent --help`.
 ```bash
 cd ~/openclaygent
 docker compose ps
-docker compose up -d
+docker compose up -d --wait
 curl -s http://localhost:8080/health
 ```
 

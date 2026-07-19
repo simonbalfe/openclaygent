@@ -249,10 +249,10 @@ Routes:
 - `GET /health` — liveness check.
 
 Port is `PORT` (default 8080). No auth — front it with whatever the deploy provides if you
-expose it publicly (it spends LLM credits per call). `docker compose up -d` runs the API as the
+expose it publicly (it spends LLM credits per call). `docker compose up -d --wait` runs the API as the
 `api` service from the public `ghcr.io/simonbalfe/openclaygent` image. Compose pulls separate
-public SearXNG and Patchright images, loads
-`.env`, and waits on SearXNG's healthcheck; `bun run api`
+public SearXNG and Patchright images, loads `.env`, and waits for all three service health checks;
+`bun run api`
 is the local-dev alternative.
 
 ```bash

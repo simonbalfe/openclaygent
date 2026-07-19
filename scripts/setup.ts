@@ -19,14 +19,14 @@ const KEYS: KeySpec[] = [
     name: "OPENROUTER_API_KEY",
     label: "OpenRouter API key",
     required: true,
-    hint: "The one required key — it drives every model (DeepSeek by default, cheap).",
+    hint: "The one required key — it drives every model (Gemini Flash Lite by default).",
     link: "https://openrouter.ai/keys",
   },
   {
     name: "EXA_API_KEY",
     label: "Exa API key",
     required: false,
-    hint: "Optional. Paid search fallback, and lets you run with no Docker at all.",
+    hint: "Optional. Paid search fallback when self-hosted search returns nothing.",
     link: "https://dashboard.exa.ai/api-keys",
   },
   {
@@ -51,6 +51,10 @@ function has(cmd: string): boolean {
 
 function run(cmd: string[]): number {
   return Bun.spawnSync(cmd, { cwd: ROOT, stdio: ["inherit", "inherit", "inherit"] }).exitCode ?? 1;
+}
+
+function succeeds(cmd: string[]): boolean {
+  return Bun.spawnSync(cmd, { cwd: ROOT, stdout: "ignore", stderr: "ignore" }).exitCode === 0;
 }
 
 function mask(value: string): string {
@@ -108,13 +112,9 @@ function main(): void {
     process.exit(1);
   }
 
-  const dockerOk = has("docker");
-  if (!dockerOk) {
-    console.log(
-      "\nDocker not found. The free self-hosted stack (SearXNG + patchright) needs it.",
-    );
-    console.log("The CLI needs an API. Run `bun run api` with an Exa key, or install Docker for the full stack.");
-  }
+  const dockerInstalled = has("docker");
+  const composeInstalled = dockerInstalled && succeeds(["docker", "compose", "version"]);
+  const dockerReady = composeInstalled && succeeds(["docker", "info"]);
 
   console.log("\nInstalling dependencies…");
   if (run(["bun", "install"]) !== 0) {
@@ -164,23 +164,34 @@ function main(): void {
   }
 
   let stackUp = false;
-  if (dockerOk) {
+  if (dockerReady) {
     const start = prompt(
-      "\nStart everything now — free search + fetch stack AND the API server (docker compose up -d)? [Y/n]",
+      "\nStart the local API, search, and browser services now? [Y/n]",
     );
     if (start === null || start.trim().toLowerCase() !== "n") {
-      stackUp = run(["docker", "compose", "up", "-d"]) === 0;
+      console.log("\nPulling the published service images…");
+      const pulled = run(["docker", "compose", "pull"]) === 0;
+      if (pulled) {
+        console.log("\nStarting services and waiting for readiness…");
+        stackUp = run(["docker", "compose", "up", "-d", "--wait", "--wait-timeout", "180"]) === 0;
+      }
     }
+  } else {
+    console.log("\nDocker Compose is not ready, so the local API stack was not started.");
+    if (!dockerInstalled) console.log("  Install Docker Desktop, OrbStack, or Docker Engine with Compose.");
+    else if (!composeInstalled) console.log("  Install the Docker Compose plugin.");
+    else console.log("  Start the Docker daemon, then run `bun run setup` again.");
+    console.log("  The CLI can still use a remote service with `--api-url <url>`.");
   }
 
   console.log("\nDone.");
   if (stackUp) {
-    console.log("  API is live:  http://localhost:8080/docs   (POST http://localhost:8080/run)");
-    console.log("  CLI:          openclaygent --help");
+    console.log("  API:  http://localhost:8080/docs");
+    console.log("  CLI:  openclaygent --help");
   } else {
-    console.log("  Start it all:  docker compose up -d       # free stack + API on :8080");
-    console.log("  CLI:           openclaygent --help        # (or `bun run cli` in this dir)");
-    console.log("  Dev API:       bun run api                # the CLI still calls localhost:8080");
+    console.log("  Local stack:  docker compose up -d --wait");
+    console.log("  Remote API:   openclaygent --api-url <url> ...");
+    console.log("  Dev API:      bun run api");
   }
 }
 
