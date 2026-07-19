@@ -1,61 +1,49 @@
-# openclaygent — agent guide
+# openclaygent
 
-Per-row web-research agent: NL brief + Zod output schema → typed, cited JSON for each row
-of a table. Runtime **Bun**. Spine **Mastra + OpenRouter** (one key, any model). Search and
-fetch are both cheapest-first ladders (self-hosted rungs → paid fallback, each skipped when
-its env is unset) — mechanism and rung order in `docs/architecture.md` (The tools) and
-`docs/decisions.md` (Search ladder, Fetch ladder).
+Openclaygent runs a web-research agent once per table row and returns typed, cited JSON.
+It uses Bun, Mastra, OpenRouter, and an HTTP API with a thin CLI client.
 
-## Run it
+Humans and agents use the same documentation. Keep headings descriptive, paragraphs short,
+and operational steps in bullets. Each fact has one canonical home. Other files link to it.
 
-- `curl -fsSL <raw>/scripts/install.sh | bash` — the from-nothing entry (`scripts/install.sh`): clones the repo to `$HOME/openclaygent` (override `OPENCLAYGENT_DIR`/`OPENCLAYGENT_REPO`), installs Bun if missing, then execs `bun run scripts/setup.ts` with stdin bound to `/dev/tty` so the key prompts work even under `curl | bash`.
-- `bun run setup` — the one-click entry once cloned (`scripts/setup.ts`, needs Bun): installs and links the thin CLI, creates `.env`, reuses exported keys, prompts only for missing keys, pulls the three public images, then runs `docker compose up -d --wait --wait-timeout 180`. Success means the API, SearXNG, and Patchright health checks all passed.
-- `bun run cli -- --help` — the thin HTTP CLI (`src/cli/index.ts`); it parses local files, calls `POST /run` at `OPENCLAYGENT_API_URL` (default `localhost:8080`), and renders the response. It never imports or runs the engine. Setup runs `bun link`, so a global `openclaygent` command also points at the install dir.
-- `./scripts/uninstall.sh` — clean wipe (confirm-gated, `-y`/`OPENCLAYGENT_YES=1` to skip). Reverts only what the install adds: `docker compose down -v`, removes the `openclaygent-api` + patchright images (all tags), `bun unlink` + drops the global `openclaygent` bin (only if it links into an openclaygent checkout), deletes `$HOME/openclaygent` (override `OPENCLAYGENT_DIR`) but only after confirming it's an openclaygent checkout and not `/`/`$HOME`. Never touches the shared `searxng` base image, other projects, or `~/.zshrc` keys.
-- `bun run api` — the only research runtime (`src/api/index.ts`, Hono + OpenAPI): `POST /run`, `/docs`, `/openapi.json`, `/health` on `PORT` (default 8080). It owns `buildAction` + `runTable`; the CLI is only a client. See `docs/architecture.md` (HTTP API).
-- `bun run test:e2e` — the single live end-to-end test; requires `OPENROUTER_API_KEY` and exercises one URL through the full agent flow.
-- `bun run typecheck` — `tsc --noEmit`.
-- `bun run knip` — dead-code / unused-export / unused-dependency check.
-- `docker compose up -d --wait` — pulls the three public GHCR images and starts SearXNG on :8888, Patchright on :9223, and the sole research runtime/API on :8080; returns only after every health check passes.
-- Needs `OPENROUTER_API_KEY` in `.env` (Bun auto-loads it). `SEARXNG_URL` / `PATCHRIGHT_URL` are auto-defaulted to the compose ports (`localhost:8888` / `localhost:9223`); set them only to point elsewhere, or empty to disable that rung. `EXA_API_KEY` is optional (paid search fallback + no-Docker path).
+## Start here
 
-## Key files
+- `README.md`: purpose, quick start, and a minimal example.
+- `docs/usage-guide.md`: CLI and API procedures, schemas, batches, and troubleshooting.
+- `docs/architecture.md`: current runtime, contracts, boundaries, and file ownership.
+- `docs/decisions.md`: rationale and constraints that are easy to break accidentally.
+- `docs/roadmap.md`: current gaps and planned work.
 
-- `src/api/core/types.ts` — `Action` primitive + `RunResult` contract.
-- `src/api/core/engine.ts` — `run` (one row), `runTable` (a table).
-- `src/api/agent/index.ts` — Mastra agent + OpenRouter provider; `src/api/agent/tools/` contains its colocated tool adapters and `src/api/agent/sink.ts` owns per-run context and provenance.
-- `src/api/core/action.ts` — `ActionSpec` + `buildAction`, used by the API runtime; `src/api/core/schema.ts` — JSON-Schema/short-form → Zod builder; `src/api/http.ts` — shared validated HTTP contract.
-- `src/api/agent/tools/` — agent-local adapters and enrichment tools: `web.ts` (assembler) · `search.ts` (evidence adapter around `open-search`) · `fetch.ts` (URL guard/evidence adapter around `open-extract`) · `apify.ts` (Mastra/provenance adapter around `open-apify`) · `linkedin.ts` · `crunchbase.ts`.
-- `packages/open-search/` — isolated query-to-results package with its own provider ladder, CLI, dependencies, and `searxng/` service configuration.
-- `packages/open-extract/` — isolated URL-to-Markdown package with its own source, CLI, dependencies, and `patchright/` rendered-browser service.
-- `packages/open-apify/` — framework-independent Apify actor runner: start, poll, timeout, dataset retrieval, and run metadata.
-- `src/api/core/debug.ts` — `OPENCLAY_DEBUG=1` API stderr tracer (adapter outcomes, swallowed errors, Apify status, and LLM latency). The standalone search and extraction CLIs use `--debug`.
-- `src/cli/` — thin CLI application (`index.ts` entry · `args.ts` parse · `input.ts` rows/action/options · `client.ts` HTTP · `render.ts` output).
-- `src/api/` — HTTP application and complete Claygent runtime: `index.ts`, `http.ts`, `core/`, and `agent/`.
+Read `docs/architecture.md` before changing boundaries or runtime wiring. Read the relevant
+section of `docs/decisions.md` before changing the agent, engine, or tools.
 
-## Workspace routing
+## Common commands
 
-Use this root guide for every workspace. Route changes by ownership:
+- `bun run setup`: install dependencies, link the CLI, configure keys, and optionally start Compose.
+- `bun run api`: run the research API.
+- `bun run cli -- --help`: show CLI usage.
+- `bun run typecheck`: check TypeScript.
+- `bun run knip`: check unused files, exports, and dependencies.
+- `bun run test:e2e`: run the live end-to-end test. Requires `OPENROUTER_API_KEY`.
 
-- `src/api/` is the Openclaygent runtime. It owns the HTTP contract, Mastra orchestration, row execution, schemas, provenance, evidence, and traces.
-- `src/api/http.ts` is the API's public transport contract. It must not import runtime core or agent code.
-- `src/cli/` depends only on `src/api/http.ts` and its own modules. It must never import `src/api/core/` or `src/api/agent/`.
-- `src/api/index.ts` is the composition boundary allowed to import the HTTP contract and runtime core.
-- `packages/open-search/` is the framework-agnostic search project. Its public operation is `search(query, options?)`. It owns the provider ladder, diagnostics, standalone CLI, and `searxng/` service configuration. It must never import from `src/api/` or own agent provenance and orchestration. Run `bun run typecheck` from that package after changes.
-- `packages/open-extract/` is the framework-agnostic extraction project. Its public operation is `extract(url)`. It owns retrieval, HTML/PDF conversion, diagnostics, standalone CLI, and the `patchright/` service. It must never import from `src/api/` or own search, provenance, databases, or orchestration. Run `bun run typecheck` from that package after changes.
-- `packages/open-apify/` is the framework-agnostic Apify actor runner. Its public operation is `runActor(options)`. It owns actor start, polling, timeout, dataset retrieval, and provider run metadata. It must never import from `src/api/` or own Mastra tools, environment lookup, provenance, or provider-specific mapping. Run `bun run check` from that package after changes.
-- Agent adapters in `src/api/agent/tools/search.ts`, `fetch.ts`, and `apify.ts` translate package results into Openclaygent evidence and trace records. Keep provider mechanics inside their packages.
-- Keep source comment-free across every workspace and put durable rationale in the relevant Markdown documentation.
+Full installation, usage, and troubleshooting procedures live in `docs/usage-guide.md`.
 
-## Docs (read before changing code)
+## Repository boundaries
 
-- `docs/architecture.md` — the action primitive, the loop, the contract, the file map (canonical — other docs point here, never copy it), scope.
-- `docs/decisions.md` — the non-obvious choices and the conventions that bite (Mastra v1 tool signature, separate structuring model, token cap, model choice, finalization fallback, model tiering). Read this before touching the agent, tools, or engine — each gotcha silently breaks a run.
-- `docs/roadmap.md` — feature checklist: what's shipped and what's still to add (parity gaps vs Claygent + Ferret).
+- `src/api/` owns the HTTP runtime, agent, engine, evidence, provenance, and schemas.
+- `src/api/http.ts` owns the transport contract and must not import runtime or agent code.
+- `src/cli/` is an HTTP client. It may depend on `src/api/http.ts`, but never on the engine or agent.
+- `packages/open-search/` owns framework-independent search and its provider ladder.
+- `packages/open-extract/` owns framework-independent URL retrieval and extraction.
+- `packages/open-apify/` owns framework-independent Apify actor execution.
+- Agent adapters under `src/api/agent/tools/` translate package results into evidence and traces.
 
-## Standing orders
+The complete file map and dependency direction live in `docs/architecture.md`.
 
-- **No explanatory comments in source.** Architecture and rationale live in `docs/`, code stays comment-free. Zod `.describe()` and tool `description` strings are functional schema, not comments — keep those.
-- Scope (what's built vs the deliberate extensions) is owned by `docs/architecture.md`; point there rather than restating it.
-- Documentation synchronization is review-driven; update the canonical owner named above whenever behavior or wiring changes.
-- **Stay in this repo when the task is focused.** Reason only about openclaygent's own code, infra, and constraints. Do NOT pull in unrelated projects, external databases, or deployment details unless the task explicitly calls for them — that outside context biases a focused answer toward infra that isn't part of this problem.
+## Standing rules
+
+- Code is the source of truth. Update its canonical document when behavior or wiring changes.
+- Keep source comment-free. Put durable rationale in `docs/decisions.md` or architecture in
+  `docs/architecture.md`. Functional schema and tool descriptions are not comments.
+- Keep provider mechanics inside their package and agent-specific behavior inside `src/api/`.
+- Stay within this repository unless the task explicitly requires an external system.

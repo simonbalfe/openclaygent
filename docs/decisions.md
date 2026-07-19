@@ -387,7 +387,7 @@ pages and is ~150 lines we control.
 ## LinkedIn via Apify HarvestAPI actors, env-gated
 
 LinkedIn pages are login-walled, so the fetch cascade can never read them. Five tools in
-`src/api/agent/tools/linkedin.ts` call HarvestAPI's no-cookie Apify actors through the framework-independent
+`src/api/agent/tools/linkedin/` contains five explicit Mastra tools that call HarvestAPI's no-cookie Apify actors through the framework-independent
 start, poll, and dataset-read flow in `packages/open-apify`, wrapped with Mastra and provenance
 recording by `src/api/agent/tools/apify.ts`:
 `linkedin-profile-scraper` (input `{url}`), `linkedin-profile-posts` (input
@@ -408,12 +408,11 @@ HTTP responses, CLI JSON, model pass envelopes, SearXNG JSON, and JSON-LD record
 same parse-at-the-boundary rule. Internal action, trace, and worker structures remain ordinary
 TypeScript types because they are constructed entirely by checked code.
 
-## Documentation synchronization is review-driven
+## Documentation has one canonical home
 
-The repository does not depend on harness-specific lifecycle hooks. `AGENTS.md` maps each
-area to its canonical documentation, and code reviews must update that owner when behavior,
-Compose wiring, or package boundaries change. Add a repository-native CI drift check only
-if review repeatedly fails to keep those files aligned.
+Humans and agents use the same documents. Current behavior and boundaries live in
+`architecture.md`, procedures in `usage-guide.md`, rationale here, and future work in
+`roadmap.md`. Entry points link to those owners instead of repeating their details.
 
 ## Large pages: bounded by the extraction package
 
@@ -482,9 +481,10 @@ prompt rule alone does not stop this, so the guard is in code.
 The API (`src/api/index.ts`) is the only entry point that calls `buildAction` and `runTable`. The
 CLI (`src/cli/index.ts`) only reads local flags/files, sends the shared `RunRequest` to `POST /run`,
 validates `RunResponse`, and renders it. This applies to local setup too: `openclaygent`
-defaults to the Compose API on `localhost:8080`. Keeping the engine out of the CLI prevents
+reads its API endpoint from the required `OPENCLAYGENT_API_URL`; setup writes the Compose
+URL into `.env`, while hosted installs provide their deployed URL. Keeping the engine out of the CLI prevents
 two execution paths from drifting and makes a remote deployment interchangeable through
-`--api-url` or `OPENCLAYGENT_API_URL`.
+`--api-url` for a one-run override.
 
 The shared contract is in `src/api/http.ts`. Keeping the wire schema independent of runtime
 core lets the CLI validate requests and responses without depending on the engine or agent.

@@ -91,7 +91,7 @@ fixed, the row varies.
    optional LinkedIn and Crunchbase enrichment tools when `APIFY_API_TOKEN` is set, and the
    tuned research behaviour, looping reason → tool → observe until it answers. The system
    context stacks three layers, fixed-first for stable prompts across rows: the
-   research doctrine (`BEHAVIOUR` in `src/api/agent/index.ts` — search/navigation/evidence/answer
+   research doctrine (`RESEARCH_SYSTEM_PROMPT` in `src/api/agent/prompts.ts` — search/navigation/evidence/answer
    discipline, our equivalent of Claygent's hidden tuned system prompt), then the action's
    `instructions`, then the templated row task. Doctrine rules lose to action rules on
    conflict.
@@ -177,9 +177,10 @@ Every run returns `RunResult<S>` (`src/api/core/types.ts`):
 | `packages/open-apify/` | isolated actor runner: start, poll, timeout, dataset retrieval, and run metadata; no Mastra or Openclaygent runtime dependency |
 | `src/api/agent/sink.ts` | the per-run context (sources, `seen` URL-provenance set, agent log, `onStep`) + shared recording and URL-provenance helpers |
 | `src/api/agent/tools/apify.ts` | Mastra/provenance adapter around `open-apify`, shared by the LinkedIn and Crunchbase tools |
-| `src/api/agent/tools/linkedin.ts` | `linkedin_profile` / `linkedin_posts` / `linkedin_post_reactions` / `linkedin_find_people` / `linkedin_company` (Apify HarvestAPI actors, each overridable via `APIFY_LINKEDIN_*_ACTOR` with the HarvestAPI ids as defaults; registered only when `APIFY_API_TOKEN` is set) |
+| `src/api/agent/tools/linkedin/` | one explicit Mastra tool per file for `linkedin_profile` / `linkedin_posts` / `linkedin_post_reactions` / `linkedin_find_people` / `linkedin_company`, plus shared actor response schemas; registered only when `APIFY_API_TOKEN` is set |
 | `src/api/agent/tools/crunchbase.ts` | `crunchbase_company` — **fallback-only** Crunchbase funding/firmographics via an Apify actor (`CRUNCHBASE_ACTOR`, default `parseforge~crunchbase-scraper`); registered only when `APIFY_API_TOKEN` is set |
-| `src/api/agent/index.ts` | per-run OpenRouter provider, default model, research behaviour, `buildAgent`, tools-disabled `buildFinalizer` |
+| `src/api/agent/index.ts` | per-run OpenRouter provider, default model, tool registration, `buildAgent`, and tools-disabled `buildFinalizer` |
+| `src/api/agent/prompts.ts` | research and tools-disabled finalizer system prompts |
 | `src/api/core/debug.ts` | `debug(scope, message)` + `reason(e)` — API stderr trace lines gated on `OPENCLAY_DEBUG`; covers adapter outcomes, Apify status, LLM calls, and engine pass boundaries. The standalone packages expose their own `--debug` flags. |
 | `src/api/core/engine.ts` | `run` (one row), `runTable` (a table), template fill, conditional gate, and finalization fallback (`serializeFindings` + `buildFinalizer`) |
 | `src/api/core/action.ts` | `ActionSpec` (the serialized brief: instructions · template · schema) + `buildAction`, owned by the API runtime |
@@ -188,44 +189,13 @@ Every run returns `RunResult<S>` (`src/api/core/types.ts`):
 | `src/cli/` | thin top-level CLI application: `index.ts` entry plus flags, local input, HTTP client, and rendering; never imports the engine |
 | `src/api/` | HTTP application and complete Claygent runtime: contract, core flow, agent, tools, and HTTP composition |
 
-## CLI
+## CLI boundary
 
-`src/cli/index.ts` is a thin client. It loads an action and rows from local flags/files, calls
-`POST /run`, validates the response, and prints it. Research always executes in the API,
-including local installs. The endpoint defaults to `http://localhost:8080`; use `--api-url`
-or `OPENCLAYGENT_API_URL` for a remote service.
+`src/cli/index.ts` loads local flags and files, sends the shared request to `POST /run`,
+validates the response, and renders it. Research always runs in the API. The CLI never imports
+the engine or agent.
 
-Single row:
-
-```bash
-bun run cli -- \
-  --instructions "What industry is this company in? Check their website." \
-  --template "Company: {{company}}\nWebsite: {{domain}}" \
-  --schema '{"industry":"string","confidence":"low|medium|high"}' \
-  --input company=Linear --input domain=linear.app
-```
-
-Batch from CSV (header row supplies the `{{slots}}`), skipping rows missing a field:
-
-```bash
-bun run cli -- \
-  --instructions "What industry is this company in?" \
-  --template "Company: {{company}}\nWebsite: {{domain}}" \
-  --schema '{"industry":"string","confidence":"low|medium|high"}' \
-  --require domain --rows rows.csv
-```
-
-`--schema` accepts **standard JSON Schema** (the conventional interchange — converted to
-Zod at the boundary via `zod-from-json-schema`) **or** a short form for flat outputs:
-`string` | `number` | `boolean` | `a|b|c` (enum) | trailing `?` for nullable. `src/api/core/schema.ts`
-detects which (a real JSON Schema has `type:"object"`/`properties`) and routes accordingly;
-either way the engine receives a Zod schema. By default stdout carries only the
-answer — `{ result, reasoning, sources }` (one object, or an array under `--rows`); `--json` prints the full
-`RunResult` envelope; `--pretty` prints a human per-row view with token and timing stats;
-`--out <file>` writes the full results to disk; `--model <id>` overrides the model per run;
-`--max-steps <n>` caps the agent loop iterations (default 5); `--concurrency <n>` sets how
-many rows run in parallel (default 5, sent as `concurrency` in the request). The completed
-`agentLog` is available with `--json`; `/run` does not currently stream intermediate steps.
+CLI procedures, schema formats, output modes, and batch examples live in `usage-guide.md`.
 
 ## HTTP API
 
@@ -251,22 +221,10 @@ Port is `PORT` (default 8080). No auth — front it with whatever the deploy pro
 expose it publicly (it spends LLM credits per call). `docker compose up -d --wait` runs the API as the
 `api` service from the public `ghcr.io/simonbalfe/openclaygent` image. Compose pulls separate
 public SearXNG and Patchright images, loads `.env`, and waits for all three service health checks;
-`bun run api`
-is the local-dev alternative.
-
-```bash
-bun run api        # serve on :8080  (bun run api:dev to watch)
-
-curl -s localhost:8080/run -H 'content-type: application/json' -d '{
-  "instructions": "Identify which CRM the company uses.",
-  "template": "Company: {{company}} ({{domain}})",
-  "schema": {"crm":"string?","confidence":"low|medium|high"},
-  "rows": [{"company":"Linear","domain":"linear.app"}]
-}'
-```
+`bun run api` is the local-development alternative.
 
 The `schema` field takes the same JSON-Schema-or-short-form as the CLI's `--schema` (both go
-through `core/schema.ts`).
+through `core/schema.ts`). API procedures and request examples live in `usage-guide.md`.
 
 ## Driving it from an agent
 
@@ -284,8 +242,5 @@ shelling out instead:
 
 ## Scope
 
-This is the single action loop, exposed by the API and reached through its CLI client — about 80% of Claygent's
-value. The cheapest-first provider **ladders** for search and fetch are built (see The tools);
-what is deliberately not built is the catalog's composable primitives: `waterfall` (user-ranked
-providers per action, distinct from the internal search/fetch ladders), `recipe` (multi-step
-chains), model-tiers, and batch-over-Neon.
+Openclaygent currently provides one reusable action loop through an HTTP API and CLI client.
+Remaining capabilities and planned work live in `roadmap.md`.
