@@ -1,4 +1,4 @@
-export type SearchProvider = "searxng" | "exa" | "tavily";
+export type SearchProvider = "searxng" | "serper" | "exa" | "tavily";
 
 export interface SearchHit {
   title: string;

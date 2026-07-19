@@ -149,19 +149,19 @@ this run produced. `sink.seen` is the URL-provenance
 set (see "No fabricated URLs"): `sources` is what the run reported, `seen` is what the run
 is allowed to open.
 
-## Search: SearXNG → Exa → Tavily ladder
+## Search: SearXNG → Serper → Exa → Tavily ladder
 
 `open-search.search` (`packages/open-search/src/search.ts`) walks providers cheapest-first;
 Openclaygent's `web_search` tool is only the evidence and trace adapter:
 self-hosted SearXNG (`SEARXNG_URL`, the compose service — zero cost, aggregates
-Google/Bing/Brave/DDG), then Exa's REST API (`api.exa.ai`, `x-api-key` auth), then Tavily
-(`api.tavily.com`, Bearer auth). A rung is skipped when its env var is unset, and the
-ladder escalates when a rung throws **or returns zero results** — so a SearXNG outage or
+Google/Bing/Brave/DDG), then Serper (`SERPER_API_KEY`, Google organic results), Exa
+(`EXA_API_KEY`), and Tavily (`TAVILY_API_KEY`). A rung is skipped when its environment
+variable is unset. The ladder escalates when a rung throws **or returns zero results** — so a SearXNG outage or
 an empty result page silently falls through to the paid backups rather than starving the
 agent. If every rung came back empty the empty list is returned (informative to the
 model); only when every rung *threw* does the tool error. The step log records the
-winning rung as `via: searxng | exa | tavily`, plus a `trail` of every rung tried with
-the reason it escalated (`searxng: empty`, `exa: error …`), so the waterfall is visible.
+winning rung as `via: searxng | serper | exa | tavily`, plus a `trail` of every rung tried
+with the reason it escalated (`searxng: empty`, `serper: error …`), so the waterfall is visible.
 
 **SearXNG routes its outgoing engine scrapes through the Evomi residential proxy.** Without
 it, Google/DDG/Brave/Startpage CAPTCHA-block the datacenter IP and most queries (especially
@@ -171,12 +171,16 @@ falls through to paid Exa on nearly every call. Three gotchas made this non-triv
   builds httpx transports with an explicit `proxy=`, bypassing httpx's env/mounts resolution.
   The proxy has to live in `outgoing.proxies.all://` in `settings.yml`.
 - **`settings.yml` does not interpolate `${ENV}`**, and the Evomi password must not be
-  committed. So `packages/open-search/searxng/settings.yml` is a secret-free template;
+  committed. So `packages/open-search/searxng/settings.yml` is a secret-free template copied
+  outside the upstream image's `/etc/searxng` volume, which would otherwise discard it at build time;
   `packages/open-search/searxng/entrypoint.sh`
   (wired as the container `entrypoint`) appends the `proxies` block from `EVOMI_*` env at
   start, then `exec`s the stock `/usr/local/searxng/entrypoint.sh`.
 - **`outgoing.extra_proxy_timeout` must be an int** (`10`, not `10.0`) or SearXNG rejects the
   whole settings file as invalid and crash-loops.
+- **Proxy authentication is checked before SearXNG starts.** Accepted Evomi credentials add
+  the proxy block. Rejected or unreachable credentials use direct engine connections instead
+  of making every engine return `407` and appear as an empty search.
 
 Google needs two more settings on top of the proxy, because a rotating residential proxy
 means any single request can land on a Google-flagged IP:
@@ -208,7 +212,7 @@ patches for Google for exactly this reason). The wall is structural: any self-ho
 fed rotating residential IPs loses to Google's server-side detection regardless of stealth
 tier. Zero-CAPTCHA Google is a managed-API outcome (Serper/SerpAPI run mobile/ISP pools +
 continuously-retuned evasion + server-side solving) or needs an in-loop solver — not a
-proxy-tuning or stealth-patch outcome. So the ladder stays SearXNG → Exa → Tavily and adds
+proxy-tuning or stealth-patch outcome. So the ladder stays SearXNG → Serper → Exa → Tavily and adds
 no self-hosted Google rung.
 
 Exa sits above Tavily because its `/search` returns page text **inline** via `contents` —

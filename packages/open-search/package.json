@@ -13,8 +13,9 @@
   },
   "scripts": {
     "cli": "bun run src/cli.ts",
+    "test": "bun test",
     "typecheck": "tsc --noEmit",
-    "check": "bun run typecheck"
+    "check": "bun run typecheck && bun test"
   },
   "dependencies": {
     "@tavily/core": "^0.7.6",

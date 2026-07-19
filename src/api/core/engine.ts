@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { buildAgent, buildFinalizer, DEFAULT_MODEL } from "../agent/index.ts";
 import { debug } from "./debug.ts";
+import { writeRunLog } from "./run-log.ts";
 import { createRunContext, noteUrl, record, type RunContext } from "../agent/sink.ts";
 import type { Action, AgentStep, Evidence, Row, RunResult } from "./types.ts";
 
@@ -260,6 +261,7 @@ export async function runTable<S extends z.ZodType>(
           results[i] = failedResult(model, e, Math.round(performance.now() - started));
         }
       }
+      await writeRunLog(action, rows[i]!, results[i]!);
     }
   }
   await Promise.all(Array.from({ length: Math.min(limit, rows.length) }, worker));

@@ -19,6 +19,19 @@ const SearxngResponseSchema = z.object({
       }),
     )
     .optional(),
+  unresponsive_engines: z.array(z.tuple([z.string(), z.string()])).optional(),
+});
+
+const SerperResponseSchema = z.object({
+  organic: z
+    .array(
+      z.object({
+        title: z.string().optional(),
+        link: z.string(),
+        snippet: z.string().optional(),
+      }),
+    )
+    .optional(),
 });
 
 function debug(message: string): void {
@@ -37,6 +50,10 @@ async function searxngSearch(baseUrl: string, query: string, maxResults: number)
   const response = await fetch(url);
   if (!response.ok) throw new Error(`SearXNG ${response.status}: ${await response.text()}`);
   const data = SearxngResponseSchema.parse(await response.json());
+  if (!(data.results?.length) && data.unresponsive_engines?.length) {
+    const failures = data.unresponsive_engines.map(([engine, reason]) => `${engine}: ${reason}`).join(", ");
+    throw new Error(`SearXNG engines unavailable: ${failures}`);
+  }
   return (data.results ?? []).slice(0, maxResults).map((result) => ({
     title: result.title ?? "",
     url: result.url,
@@ -44,8 +61,24 @@ async function searxngSearch(baseUrl: string, query: string, maxResults: number)
   }));
 }
 
+async function serperSearch(apiKey: string, query: string, maxResults: number): Promise<SearchHit[]> {
+  const response = await fetch("https://google.serper.dev/search", {
+    method: "POST",
+    headers: { "content-type": "application/json", "X-API-KEY": apiKey },
+    body: JSON.stringify({ q: query, num: maxResults }),
+  });
+  if (!response.ok) throw new Error(`Serper ${response.status}: ${await response.text()}`);
+  const data = SerperResponseSchema.parse(await response.json());
+  return (data.organic ?? []).slice(0, maxResults).map((result) => ({
+    title: result.title ?? "",
+    url: result.link,
+    content: result.snippet ?? "",
+  }));
+}
+
 function ladder(): Rung[] {
   const searxngUrl = process.env.SEARXNG_URL ?? "http://localhost:8888";
+  const serperKey = process.env.SERPER_API_KEY ?? "";
   const exaKey = process.env.EXA_API_KEY ?? "";
   const tavilyKey = process.env.TAVILY_API_KEY ?? "";
   return [
@@ -53,6 +86,11 @@ function ladder(): Rung[] {
       provider: "searxng",
       enabled: Boolean(searxngUrl),
       execute: (query, maxResults) => searxngSearch(searxngUrl, query, maxResults),
+    },
+    {
+      provider: "serper",
+      enabled: Boolean(serperKey),
+      execute: (query, maxResults) => serperSearch(serperKey, query, maxResults),
     },
     {
       provider: "exa",
@@ -122,5 +160,5 @@ export async function search(query: string, options: SearchOptions = {}): Promis
   }
   throw lastError instanceof Error
     ? lastError
-    : new Error("No search provider configured: start SearXNG or set EXA_API_KEY or TAVILY_API_KEY");
+    : new Error("No search provider configured: start SearXNG or set SERPER_API_KEY, EXA_API_KEY, or TAVILY_API_KEY");
 }

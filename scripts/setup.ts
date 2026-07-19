@@ -23,6 +23,13 @@ const KEYS: KeySpec[] = [
     link: "https://openrouter.ai/keys",
   },
   {
+    name: "SERPER_API_KEY",
+    label: "Serper API key",
+    required: false,
+    hint: "Optional. Google search fallback after self-hosted search.",
+    link: "https://serper.dev/api-key",
+  },
+  {
     name: "EXA_API_KEY",
     label: "Exa API key",
     required: false,

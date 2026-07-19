@@ -1,36 +1,44 @@
 export const HELP = `openclaygent — per-row web-research agent
 
 Usage:
-  openclaygent --instructions <text> --template <text> --schema <json> [rows] [options]
-  openclaygent --action <file.json> [rows] [options]
+  openclaygent --instructions <text> --template <text> --schema <json> [row options]
+  openclaygent --action <file.json> [row options]
 
-Action (inline):
-  --instructions <text>   What to research / how to behave (system prompt).
-  --template <text>       User prompt with {{field}} slots, e.g. "Company: {{company}}".
-  --schema <json>         Output shape. Standard JSON Schema, or the short form:
-                          '{"industry":"string","confidence":"low|medium|high"}'.
-                          Short types: string | number | boolean | a|b|c (enum) | trailing ? = nullable.
-  --action <file.json>    Load { name, instructions, template, schema } from a file instead.
-  --require <field>       Skip any row missing this field (conditionalRun).
+Define the research:
+  --instructions <text>  What the agent should research and how it should behave.
+  --template <text>      Per-row prompt with {{field}} slots, e.g. "Company: {{company}}".
+  --schema <json>        Exact output shape as JSON Schema or short form:
+                         '{"industry":"string","confidence":"low|medium|high"}'
+                         Types: string | number | boolean | a|b|c | trailing ? for nullable.
+  --action <file.json>   Load { name, instructions, template, schema } from one file.
 
-Rows (pick one):
-  --input k=v             A single row field. Repeatable: --input company=Clay --input domain=clay.com
-  --rows <file.csv>       A batch of rows from a CSV file with a header.
+Choose rows:
+  --input k=v            Add a field to one row. Repeat for multiple fields.
+                         Example: --input company=Clay --input domain=clay.com
+  --rows <file.csv>      Research every row in a CSV file with a header.
+  --require <field>      Skip rows where this field is empty.
 
-Options:
-  --model <id>            OpenRouter model id (default: google/gemini-3.1-flash-lite).
-  --max-steps <n>         Max agent loop iterations (default: 5).
-  --concurrency <n>       Rows to research in parallel (default: 5).
-  --api-url <url>         Openclaygent API (overrides required OPENCLAYGENT_API_URL).
-  --json                  Print the full RunResult envelope (sources, agentLog, tokens)
-                          instead of just the result.
-  --pretty                Human-readable per-row view with token stats.
-  --out <file>            Also write the full results as JSON to this file.
-  --help                  Show this.
+Control the research:
+  --model <id>           OpenRouter model id (default: google/gemini-3.1-flash-lite).
+  --max-steps <n>        Maximum agent tool/reasoning steps per row (default: 5).
+  --concurrency <n>      Rows researched in parallel (default: 5).
 
-By default stdout carries the answer: { result, reasoning, sources } — the schema-shaped
-result, a one-line why, and the URLs behind it (an array for --rows). The CLI always sends
-the run to the Openclaygent API; steps and tokens are there when you ask (--json).`;
+Search and extraction:
+  Search is automatic: SearXNG → Serper → Exa → Tavily.
+  Page extraction is automatic: HTTP → rendered browser → anti-bot fallbacks.
+  Provider rungs are enabled by the API service environment; there are no CLI provider flags.
+
+Connect to the API:
+  --api-url <url>        API URL for this run. Otherwise uses OPENCLAYGENT_API_URL.
+
+Choose output:
+  --json                Full result including sources, agent steps, tokens, and timing.
+  --pretty              Human-readable result with token and timing statistics.
+  --out <file>          Write the full results to a JSON file.
+  --help                Show this page.
+
+Default stdout is { result, reasoning, sources }. The CLI only sends requests; search,
+extraction, model calls, and per-run trace files are owned by the API service.`;
 
 const FlagsSchema = z
   .object({

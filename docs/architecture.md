@@ -16,7 +16,7 @@ flowchart LR
   ACT --> ENG
   ROWS --> ENG
   ENG["Engine<br/>run / runTable"] --> AG["Agent<br/>Mastra + OpenRouter"]
-  AG <-->|"web_search · fetch_page"| EXA["SearXNG · Exa · Tavily"]
+  AG <-->|"web_search · fetch_page"| EXA["SearXNG · Serper · Exa · Tavily"]
   AG --> STR["Structuring model<br/>text → Zod schema"]
   STR --> RR["RunResult<br/>result · sources · agentLog · tokens"]
   RR --> ENG
@@ -55,7 +55,7 @@ write every URL and step into the run's `Sink`.
 ```mermaid
 flowchart LR
   R["Reason"] --> D{"next action?"}
-  D -- web_search --> WS["SearXNG → Exa → Tavily<br/>(snippets)"] --> O["Observe"]
+  D -- web_search --> WS["SearXNG → Serper → Exa → Tavily<br/>(snippets)"] --> O["Observe"]
   D -- fetch_page --> FP["open-extract package<br/>(URL → bounded Markdown)"] --> O
   O --> R
   D -- answer --> A["final text → structuring"]
@@ -164,6 +164,11 @@ Every run returns `RunResult<S>` (`src/api/core/types.ts`):
 - `skipped?` / `error?` — set when the row was skipped by `conditionalRun`, or when its
   `run` threw and `runTable` caught it (the batch keeps going). Both absent on a normal run.
 
+Each row run also writes exactly one durable JSON trace to `logs/<runId>.json`. The file
+contains the action name, instructions, template, original schema object, input row, complete `RunResult`, and ordered
+`agentLog`. Set
+`OPENCLAY_LOG_DIR` to place these files elsewhere. The directory is created automatically.
+
 ## File map
 
 | File | Role |
@@ -172,7 +177,7 @@ Every run returns `RunResult<S>` (`src/api/core/types.ts`):
 | `src/api/agent/tools/web.ts` | thin assembler — `webTools(context)` returns `web_search` + `fetch_page` from `search.ts` and `fetch.ts` |
 | `src/api/agent/tools/search.ts` | thin `web_search` adapter: `open-search.search(query)` → evidence and step recording |
 | `src/api/agent/tools/fetch.ts` | thin `fetch_page` adapter: URL guard → `open-extract.extract(url)` → evidence and step recording |
-| `packages/open-search/` | isolated Bun/TypeScript workspace package: SearXNG→Exa→Tavily ladder, diagnostics, standalone CLI, and SearXNG service configuration |
+| `packages/open-search/` | isolated Bun/TypeScript workspace package: SearXNG→Serper→Exa→Tavily ladder, diagnostics, standalone CLI, and SearXNG service configuration |
 | `packages/open-extract/` | isolated Bun/TypeScript workspace package: URL retrieval ladder, HTML/PDF extraction, bounded Markdown, Patchright service, and standalone CLI |
 | `packages/open-apify/` | isolated actor runner: start, poll, timeout, dataset retrieval, and run metadata; no Mastra or Openclaygent runtime dependency |
 | `src/api/agent/sink.ts` | the per-run context (sources, `seen` URL-provenance set, agent log, `onStep`) + shared recording and URL-provenance helpers |
@@ -186,6 +191,7 @@ Every run returns `RunResult<S>` (`src/api/core/types.ts`):
 | `src/api/core/action.ts` | `ActionSpec` (the serialized brief: instructions · template · schema) + `buildAction`, owned by the API runtime |
 | `src/api/http.ts` | public validated `POST /run` request and response contract used by the API and thin CLI client; independent of runtime core and agent code |
 | `src/api/core/schema.ts` | `buildSchema` — turn a JSON Schema / short form into the action's Zod `output` |
+| `src/api/core/run-log.ts` | writes one durable JSON trace per row run to `logs/<runId>.json` |
 | `src/cli/` | thin top-level CLI application: `index.ts` entry plus flags, local input, HTTP client, and rendering; never imports the engine |
 | `src/api/` | HTTP application and complete Claygent runtime: contract, core flow, agent, tools, and HTTP composition |
 

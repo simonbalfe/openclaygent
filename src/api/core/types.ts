@@ -6,6 +6,7 @@ export interface Action<S extends z.ZodType> {
   name: string;
   instructions: string;
   template: string;
+  schema: Record<string, unknown>;
   output: S;
   conditionalRun?: (row: Row) => boolean;
 }

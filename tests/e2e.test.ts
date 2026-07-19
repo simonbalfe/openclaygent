@@ -12,6 +12,10 @@ live(
       name: "example_domain_check",
       instructions: "Open the supplied URL and identify what the page says example domains are intended for. Use live web evidence and answer conservatively.",
       template: "URL: {{url}}",
+      schema: {
+        intended_for_documentation: "boolean",
+        owner: "string",
+      },
       output: z.object({
         intended_for_documentation: z.boolean(),
         owner: z.string(),

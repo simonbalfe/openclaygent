@@ -18,6 +18,7 @@ export function buildAction(
     name: spec.name ?? "action",
     instructions: spec.instructions,
     template: spec.template,
+    schema: spec.schema,
     output: buildSchema(spec.schema),
     conditionalRun: requireField ? (row: Row) => Boolean(row[requireField]) : undefined,
   });

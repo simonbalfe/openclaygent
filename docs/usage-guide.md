@@ -211,6 +211,9 @@ Use `input` instead of `rows` for one row:
 - `--model <openrouter-model-id>` overrides the configured model for one run.
 - Set `OPENCLAY_DEBUG=1` in `.env` and restart the API to print API adapter and timing traces.
   Use each standalone package CLI's `--debug` flag for its full provider ladder diagnostics.
+- Every row run writes one JSON trace to `logs/<runId>.json`. Set `OPENCLAY_LOG_DIR` to use
+  another directory. Each file contains the instructions, template, original schema object, input row, result, sources,
+  tokens, and agent steps.
 
 Example run with an explicit model:
 

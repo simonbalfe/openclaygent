@@ -32,6 +32,7 @@ Full installation, usage, and troubleshooting procedures live in `docs/usage-gui
 
 - `src/api/` owns the HTTP runtime, agent, engine, evidence, provenance, and schemas.
 - `src/api/http.ts` owns the transport contract and must not import runtime or agent code.
+- `src/api/core/run-log.ts` writes one JSON trace per row run to `logs/<runId>.json`.
 - `src/cli/` is an HTTP client. It may depend on `src/api/http.ts`, but never on the engine or agent.
 - `packages/open-search/` owns framework-independent search and its provider ladder.
 - `packages/open-extract/` owns framework-independent URL retrieval and extraction.
