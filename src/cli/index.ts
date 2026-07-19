@@ -4,9 +4,9 @@ import { runRemote } from "./client.ts";
 import {
   buildRequestOptions,
   loadActionSpec,
-  loadInputRows,
   prepareRows,
   resolveApiUrl,
+  resolveRows,
 } from "./input.ts";
 import { renderResults } from "./render.ts";
 
@@ -17,7 +17,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  const rows = await loadInputRows(flags, inputs);
+  const rows = await resolveRows(flags, inputs);
   const action = await loadActionSpec(flags);
   const request = {
     ...action,

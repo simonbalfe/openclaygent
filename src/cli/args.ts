@@ -15,7 +15,7 @@ Action (inline):
 
 Rows (pick one):
   --input k=v             A single row field. Repeatable: --input company=Clay --input domain=clay.com
-  --rows <file.json|csv>  A batch of rows (JSON array of objects, or CSV with a header).
+  --rows <file.csv>       A batch of rows from a CSV file with a header.
 
 Options:
   --model <id>            OpenRouter model id (default: google/gemini-3.1-flash-lite).

@@ -44,18 +44,19 @@ function parseCSV(text: string): HttpRow[] {
   }
   const header = grid.shift();
   if (!header) return [];
-  return grid.map((r) => Object.fromEntries(header.map((h, i) => [h.trim(), r[i] ?? ""])));
+  const rows = grid.map((row) =>
+    Object.fromEntries(header.map((column, index) => [column.trim(), row[index] ?? ""])),
+  );
+  return HttpRowSchema.array().parse(rows);
 }
 
-async function loadRows(path: string): Promise<HttpRow[]> {
-  const text = await Bun.file(path).text();
-  if (path.toLowerCase().endsWith(".csv")) return parseCSV(text);
-  const data: unknown = JSON.parse(text);
-  return Array.isArray(data) ? HttpRowSchema.array().parse(data) : [HttpRowSchema.parse(data)];
+async function loadCsvRows(path: string): Promise<HttpRow[]> {
+  if (!path.toLowerCase().endsWith(".csv")) throw new Error("--rows requires a .csv file");
+  return parseCSV(await Bun.file(path).text());
 }
 
-export async function loadInputRows(flags: Flags, inputs: HttpRow): Promise<HttpRow[]> {
-  return flags.rows ? loadRows(flags.rows) : [inputs];
+export async function resolveRows(flags: Flags, inputs: HttpRow): Promise<HttpRow[]> {
+  return flags.rows ? loadCsvRows(flags.rows) : [inputs];
 }
 
 export function prepareRows(rows: HttpRow[]): HttpRow[] {

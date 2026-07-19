@@ -13,7 +13,7 @@ the gap it closes (vs Clay's Claygent and the Ferret reference).
 - [x] Finalization fallback on empty structured output — tools-disabled pass over the serialized findings when the agent loop ends without an answer (the reasoning-model step-budget exhaustion failure). See `decisions.md` (Finalization fallback)
 - [x] `Sink` → `sources` + `agentLog` provenance
 - [x] Conditional-run skip (the credit saver)
-- [x] Thin HTTP CLI client — single (`--input`) and batch (`--rows` JSON/CSV), `--require`, `--json`, `--out`, `--model`, `--api-url`; all research runs through `POST /run`, including local setup
+- [x] Thin HTTP CLI client — single (`--input`) and batch (`--rows` CSV), `--require`, `--json`, `--out`, `--model`, `--api-url`; the CLI converts rows to the API's JSON contract and all research runs through `POST /run`
 - [x] Isolated search workspace — `web_search` delegates query execution to `packages/open-search` through the `open-search` package import; the package owns the SearXNG→Exa→Tavily ladder, standalone CLI, diagnostics, and SearXNG configuration
 - [x] Fetch ladder — imported from the isolated `open-extract` workspace package: impit (browser TLS), Readability/pruning, PDF extraction, Patchright direct/proxy/solver escalation, and optional Tavily fallback. Mechanism in `architecture.md` (The tools) + `decisions.md` (Fetch ladder)
 - [x] LinkedIn tools — `linkedin_profile` / `linkedin_posts` / `linkedin_post_reactions` / `linkedin_find_people` / `linkedin_company` (exact headcount, size range, industry, HQ, founded year, follower count) via Apify HarvestAPI actors (no-cookie, ~$2–4/1k items; employee search $4/1k, 3x with emails), env-gated on `APIFY_API_TOKEN`

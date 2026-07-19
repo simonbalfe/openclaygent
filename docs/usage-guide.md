@@ -102,16 +102,8 @@ openclaygent \
 `--require domain` skips rows with an empty domain before spending model tokens. Results
 remain in input order even though rows run concurrently.
 
-JSON arrays work too:
-
-```json
-[
-  {"company": "Linear", "domain": "linear.app"},
-  {"company": "Notion", "domain": "notion.so"}
-]
-```
-
-Pass that file with `--rows companies.json`.
+The CLI parses the CSV into `rows: HttpRow[]` and submits that array in the JSON body sent
+to `POST /run`. Programmatic clients can send the same JSON contract directly.
 
 ## Reuse an action file
 
@@ -264,5 +256,5 @@ Try increasing `--max-steps` or using a stronger OpenRouter model.
 
 ### A template field is missing
 
-Every `{{field}}` in the template must match an `--input` name or a column in the CSV or
-JSON rows. Missing values appear as `[MISSING:field]` in the research prompt.
+Every `{{field}}` in the template must match an `--input` name or a column in the CSV.
+Missing values appear as `[MISSING:field]` in the research prompt.
