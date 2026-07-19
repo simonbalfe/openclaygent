@@ -18,4 +18,4 @@ COPY packages/open-extract/package.json ./packages/open-extract/package.json
 COPY packages/open-extract/src ./packages/open-extract/src
 USER bun
 EXPOSE 8080
-ENTRYPOINT ["bun", "run", "src/cli.ts"]
+ENTRYPOINT ["bun", "run", "src/api.ts"]

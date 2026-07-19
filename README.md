@@ -1,8 +1,8 @@
 # openclaygent
 
 A web-research agent: hand it a question and a table, it reads the live web for every row
-and returns typed, **cited JSON**. The open-source take on Clay's Claygent, shipped as a
-CLI and an HTTP API.
+and returns typed, **cited JSON**. The open-source take on Clay's Claygent, with one Dockerized
+API runtime and a thin CLI client.
 
 ## The idea
 
@@ -67,8 +67,8 @@ When it finishes: API at `http://localhost:8080/docs`, CLI available globally as
 
 - Already cloned? `bun run setup`
 - Manual instead: `cp .env.example .env && docker compose up -d`, then edit `.env`
-- No Docker? Set `EXA_API_KEY` and skip compose — Exa searches, the built-in `impit` rung
-  fetches. Zero infra, but you pay per search.
+- No Docker? Run the API with `bun run api`; the CLI still calls it over HTTP. Set `EXA_API_KEY`
+  when running without the self-hosted SearXNG service.
 
 **Required:**
 
@@ -103,16 +103,19 @@ openclaygent \
 ```
 
 By default stdout is just the answer — the schema-shaped `result` plus a one-line
-`reasoning` and the `sources` behind it (live step trace goes to stderr), so it pipes
-straight into scripts and agents. `--json` adds the full envelope with agent log and
+`reasoning` and the `sources` behind it, so it pipes straight into scripts and agents.
+`--json` adds the full envelope with agent log and
 tokens; `--pretty` is a human table. Batch with
 `--rows leads.csv --out enriched.json`; skip unqualified rows with `--require domain`; add
 Full flags: `openclaygent --help`.
 
+The CLI always calls the API at `http://localhost:8080`. Override it with `--api-url` or
+`OPENCLAYGENT_API_URL` for a remote service.
+
 ## Use it: HTTP API
 
 ```bash
-bun run api    # :8080, interactive docs at /docs
+docker compose up -d
 curl -s localhost:8080/run -H 'content-type: application/json' -d '{
   "instructions": "Identify which CRM the company uses.",
   "template": "Company: {{company}} ({{domain}})",

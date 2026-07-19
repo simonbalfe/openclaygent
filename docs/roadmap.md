@@ -13,7 +13,7 @@ the gap it closes (vs Clay's Claygent and the Ferret reference).
 - [x] Finalization fallback on empty structured output — tools-disabled pass over the serialized findings when the agent loop ends without an answer (the reasoning-model step-budget exhaustion failure). See `decisions.md` (Finalization fallback)
 - [x] `Sink` → `sources` + `agentLog` provenance
 - [x] Conditional-run skip (the credit saver)
-- [x] CLI — single (`--input`) and batch (`--rows` JSON/CSV), `--require`, `--json`, `--out`, `--model`
+- [x] Thin HTTP CLI client — single (`--input`) and batch (`--rows` JSON/CSV), `--require`, `--json`, `--out`, `--model`, `--api-url`; all research runs through `POST /run`, including local setup
 - [x] Isolated search workspace — `web_search` delegates query execution to `packages/open-search` through the `open-search` package import; the package owns the SearXNG→Exa→Tavily ladder, standalone CLI, diagnostics, and SearXNG configuration
 - [x] Fetch ladder — imported from the isolated `open-extract` workspace package: impit (browser TLS), Readability/pruning, PDF extraction, Patchright direct/proxy/solver escalation, and optional Tavily fallback. Mechanism in `architecture.md` (The tools) + `decisions.md` (Fetch ladder)
 - [x] LinkedIn tools — `linkedin_profile` / `linkedin_posts` / `linkedin_post_reactions` / `linkedin_find_people` / `linkedin_company` (exact headcount, size range, industry, HQ, founded year, follower count) via Apify HarvestAPI actors (no-cookie, ~$2–4/1k items; employee search $4/1k, 3x with emails), env-gated on `APIFY_API_TOKEN`
@@ -23,7 +23,7 @@ the gap it closes (vs Clay's Claygent and the Ferret reference).
 ## Reliability
 
 - [x] SearXNG via Evomi residential proxy — `packages/open-search/searxng/entrypoint.sh` injects the proxy configuration into the package-owned settings template. See `decisions.md` (Search ladder).
-- [x] Ladder trail observability — every search/fetch step carries a `trail` of each rung attempted with the reason it escalated (`searxng: empty`, `impit: bot-wall/shell (812c)`, `patchright: empty`), surfaced in `agentLog` and printed by the CLI as a `ladder:` line even without `--verbose`, so an early jump to a paid rung is explainable. See `architecture.md` (the contract) + `decisions.md` (Search/Fetch ladder).
+- [x] Ladder trail observability — every search/fetch step carries a `trail` of each rung attempted with the reason it escalated (`searxng: empty`, `impit: bot-wall/shell (812c)`, `patchright: empty`) and is surfaced in `agentLog`, so an early jump to a paid rung is explainable. See `architecture.md` (the contract) + `decisions.md` (Search/Fetch ladder).
 - [ ] Context compaction — truncate old tool results so long runs don't grow tokens quadratically
 - [x] Isolated extraction workspace — `fetch_page` delegates URL retrieval and URL-to-Markdown conversion to `packages/open-extract` through the `open-extract` package import; Openclaygent keeps provenance, evidence, and trace recording
 - [ ] Page read windows (offset) + section targeting — extend `open-extract` only if the URL-only bounded response proves insufficient on real runs
@@ -44,7 +44,7 @@ the gap it closes (vs Clay's Claygent and the Ferret reference).
 
 ## Interfaces
 
-- [x] HTTP `POST /run` endpoint (`src/api.ts`, Hono + `@hono/zod-openapi`) — single via `input`, batch via `rows`; zod-validated body (auto 400), generated `/openapi.json` + Scalar `/docs`. Shares `core/action.ts` + `runTable` with the CLI (no auth yet)
+- [x] HTTP `POST /run` endpoint (`src/api.ts`, Hono + `@hono/zod-openapi`) — the sole research runtime; single via `input`, batch via `rows`; zod-validated body (auto 400), generated `/openapi.json` + Scalar `/docs`; consumed by the CLI (no auth yet)
 - [ ] API auth — bearer/API-key gate on `POST /run` before exposing the endpoint publicly
 - [ ] CSV output — write results back as columns appended to the input rows
 - [ ] Clay HTTP-column recipe — documented body shape for dropping it into a Clay table

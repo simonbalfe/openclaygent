@@ -154,10 +154,10 @@ Every run returns `RunResult<S>` (`src/core/types.ts`):
   step carries `results: StepResult[]` — what the tool actually returned (title, URL,
   preview snippet, fetched char count), and a `trail` of every ladder rung attempted with the reason it escalated (search: on the
   step; fetch: per-URL on each result) — so a run is auditable after the fact and the
-  cheapest-first waterfall is visible without `--verbose`.
+  cheapest-first waterfall is visible in the completed `agentLog`.
 - internal evidence — `RunContext` retains the full bounded text returned by each tool,
-  separately from the concise `agentLog` previews. The finalizer reads this evidence, while
-  CLI/API traces remain compact.
+  separately from the concise `agentLog` previews. The finalizer reads this evidence while
+  the HTTP response remains compact.
 - `tokens`, `durationMs`, `model` — usage and provenance.
 - `skipped?` / `error?` — set when the row was skipped by `conditionalRun`, or when its
   `run` threw and `runTable` caught it (the batch keeps going). Both absent on a normal run.
@@ -179,19 +179,22 @@ Every run returns `RunResult<S>` (`src/core/types.ts`):
 | `src/core/agent.ts` | per-run OpenRouter provider, default model, research behaviour, `buildAgent`, tools-disabled `buildFinalizer` |
 | `src/core/debug.ts` | `debug(scope, message)` + `reason(e)` — stderr trace lines gated on `OPENCLAY_DEBUG`; covers extraction, search rungs, Apify status, LLM calls, and engine pass boundaries |
 | `src/core/engine.ts` | `run` (one row), `runTable` (a table), template fill, conditional gate, and finalization fallback (`serializeFindings` + `buildFinalizer`) |
-| `src/core/action.ts` | `ActionSpec` (the serialized brief: instructions · template · schema) + `buildAction` — the adapter both frontends call so neither duplicates action assembly |
+| `src/core/action.ts` | `ActionSpec` (the serialized brief: instructions · template · schema) + `buildAction`, owned by the API runtime |
+| `src/core/http.ts` | shared validated `POST /run` request and response contract used by the API and thin CLI client |
 | `src/core/schema.ts` | `buildSchema` — turn a JSON Schema / short form into the action's Zod `output` |
-| `src/cli.ts` | CLI entry: wire args → `buildAction` → rows → `runTable` → render |
+| `src/cli.ts` | thin CLI entry: flags/local files → `POST /run` → render; never imports the engine |
 | `src/cli/args.ts` | `parseArgs`, `Flags`/`Parsed` types, `HELP` text |
-| `src/cli/input.ts` | `parseCSV`, `loadRows`, `loadActionSpec`, `buildOptions` — flags/files → `ActionSpec` + rows + `RunOptions` |
-| `src/cli/render.ts` | `formatStep`, `printRow` — terminal presentation |
+| `src/cli/input.ts` | `parseCSV`, `loadRows`, `loadActionSpec`, `buildRequestOptions` — local flags/files → HTTP request |
+| `src/cli/client.ts` | validated HTTP client for `POST /run` |
+| `src/cli/render.ts` | terminal response presentation |
 | `src/api.ts` | HTTP entry: `@hono/zod-openapi` `POST /run` → `buildAction` → `runTable`, plus `/openapi.json` + Scalar `/docs` + `/health` |
 
 ## CLI
 
-`src/cli.ts` is the command-line front end. It builds an `Action` from flags (or an
-`--action` file), loads rows (a single `--input` row, or a `--rows` JSON/CSV batch), runs
-`runTable`, and prints results.
+`src/cli.ts` is a thin client. It loads an action and rows from local flags/files, calls
+`POST /run`, validates the response, and prints it. Research always executes in the API,
+including local installs. The endpoint defaults to `http://localhost:8080`; use `--api-url`
+or `OPENCLAYGENT_API_URL` for a remote service.
 
 Single row:
 
@@ -222,19 +225,14 @@ answer — `{ result, reasoning, sources }` (one object, or an array under `--ro
 `RunResult` envelope; `--pretty` prints a human per-row view with token and timing stats;
 `--out <file>` writes the full results to disk; `--model <id>` overrides the model per run;
 `--max-steps <n>` caps the agent loop iterations (default 5); `--concurrency <n>` sets how
-many rows run in parallel (default 5, wired as `RunOptions.concurrency`).
-Agent steps **always stream live** to stderr as they happen — query, provider used (`via`),
-and the ladder `trail` with escalation reasons (wired as `RunOptions.onStep`, fired by the
-same `record()` that appends to `agentLog`; stderr keeps stdout pipeable). `--verbose` adds
-result previews to that live trace — search hits (title, URL, snippet) and fetched page
-sizes/text previews.
+many rows run in parallel (default 5, sent as `concurrency` in the request). The completed
+`agentLog` is available with `--json`; `/run` does not currently stream intermediate steps.
 
 ## HTTP API
 
-`src/api.ts` is the second front end — the same engine over HTTP, so openclaygent deploys as
-a Ferret-style endpoint as well as a CLI. It shares **all** logic with the CLI: both call
-`buildAction` (`core/action.ts`) then `runTable`. The API file is pure HTTP wiring — no
-research or schema logic is re-implemented.
+`src/api.ts` is the sole engine entry point. It validates the HTTP request, calls
+`buildAction` (`core/action.ts`) and `runTable`, and returns the results. The CLI reaches this
+same path over HTTP rather than carrying a second copy of the runtime.
 
 Built on `@hono/zod-openapi`: the request/response shapes are zod schemas, so the body is
 **validated automatically** (a malformed body returns `400` before the handler runs) and the
@@ -252,8 +250,8 @@ Routes:
 
 Port is `PORT` (default 8080). No auth — front it with whatever the deploy provides if you
 expose it publicly (it spends LLM credits per call). `docker compose up -d` runs the API as the
-`api` service from the public `ghcr.io/simonbalfe/openclaygent` image, with its entrypoint
-overridden to `src/api.ts`. Compose pulls separate public SearXNG and Patchright images, loads
+`api` service from the public `ghcr.io/simonbalfe/openclaygent` image. Compose pulls separate
+public SearXNG and Patchright images, loads
 `.env`, and waits on SearXNG's healthcheck; `bun run api`
 is the local-dev alternative.
 
@@ -287,7 +285,7 @@ shelling out instead:
 
 ## Scope
 
-This is the single action loop, exposed as a CLI and an HTTP API — about 80% of Claygent's
+This is the single action loop, exposed by the API and reached through its CLI client — about 80% of Claygent's
 value. The cheapest-first provider **ladders** for search and fetch are built (see The tools);
 what is deliberately not built is the catalog's composable primitives: `waterfall` (user-ranked
 providers per action, distinct from the internal search/fetch ladders), `recipe` (multi-step

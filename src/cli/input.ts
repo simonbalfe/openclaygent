@@ -1,8 +1,7 @@
 import type { ActionSpec } from "../core/action.ts";
-import type { RunOptions } from "../core/engine.ts";
+import type { RunRequest } from "../core/http.ts";
 import type { Row } from "../core/types.ts";
 import type { Flags } from "./args.ts";
-import { formatStep } from "./render.ts";
 
 function parseCSV(text: string): Row[] {
   const grid: string[][] = [];
@@ -56,8 +55,8 @@ export async function loadActionSpec(flags: Flags): Promise<ActionSpec> {
   return { instructions: flags.instructions, template: flags.template, schema: JSON.parse(flags.schema) };
 }
 
-export function buildOptions(flags: Flags): RunOptions {
-  const opts: RunOptions = {};
+export function buildRequestOptions(flags: Flags): Pick<RunRequest, "model" | "maxSteps" | "concurrency" | "require"> {
+  const opts: Pick<RunRequest, "model" | "maxSteps" | "concurrency" | "require"> = {};
   if (typeof flags.model === "string") opts.model = flags.model;
   if (typeof flags["max-steps"] === "string") {
     const n = Number(flags["max-steps"]);
@@ -67,9 +66,6 @@ export function buildOptions(flags: Flags): RunOptions {
     const n = Number(flags.concurrency);
     if (Number.isFinite(n)) opts.concurrency = n;
   }
-  opts.onStep = (s) =>
-    formatStep(s, Boolean(flags.verbose)).forEach((line) =>
-      console.error(line.startsWith(" ") ? `    ${line}` : `  › ${line}`),
-    );
+  if (typeof flags.require === "string") opts.require = flags.require;
   return opts;
 }

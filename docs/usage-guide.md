@@ -68,9 +68,6 @@ openclaygent [action and row arguments] --pretty
 # Full RunResult with tool log, tokens, and timings
 openclaygent [action and row arguments] --json
 
-# Include search and fetched-page previews in the live stderr trace
-openclaygent [action and row arguments] --verbose
-
 # Save the full result while still printing to the terminal
 openclaygent [action and row arguments] --out result.json
 ```
@@ -261,7 +258,7 @@ A `--require` field was absent or empty. Check the CSV header and the affected r
 
 ### A result is null
 
-Run again with `--verbose --json` to inspect the provider trail and full result envelope.
+Run again with `--json` to inspect the provider trail and full result envelope.
 Try increasing `--max-steps` or using a stronger OpenRouter model.
 
 ### A template field is missing

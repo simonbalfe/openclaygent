@@ -113,7 +113,7 @@ function main(): void {
     console.log(
       "\nDocker not found. The free self-hosted stack (SearXNG + patchright) needs it.",
     );
-    console.log("You can still run with an Exa key and zero infra — install Docker later for free search.");
+    console.log("The CLI needs an API. Run `bun run api` with an Exa key, or install Docker for the full stack.");
   }
 
   console.log("\nInstalling dependencies…");
@@ -180,7 +180,7 @@ function main(): void {
   } else {
     console.log("  Start it all:  docker compose up -d       # free stack + API on :8080");
     console.log("  CLI:           openclaygent --help        # (or `bun run cli` in this dir)");
-    console.log("  API only:      bun run api                # http://localhost:8080/docs");
+    console.log("  Dev API:       bun run api                # the CLI still calls localhost:8080");
   }
 }
 

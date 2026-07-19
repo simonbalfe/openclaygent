@@ -473,17 +473,17 @@ prompt rule alone does not stop this, so the guard is in code.
   against each other — because aggregator snippets conflict and go stale. This is the source
   of truth for firmographics; open search fills only what they don't carry.
 
-## Two frontends, one core — never duplicate run logic
+## One runtime behind HTTP
 
-The CLI (`src/cli.ts`) and the HTTP API (`src/api.ts`) are both thin adapters over the same
-core. Each turns its own input format into an `ActionSpec` + rows + `RunOptions`, then calls
-`buildAction` (`core/action.ts`) and `runTable`. The rule that bites: action assembly,
-schema building and the agent loop live in `core/`, never in a frontend.
-If you find yourself writing `defineAction` or `buildSchema` inside `cli/` or `api.ts`,
-that logic belongs in `core/action.ts` so both paths share it. Frontends never import each
-other.
+The API (`src/api.ts`) is the only entry point that calls `buildAction` and `runTable`. The
+CLI (`src/cli.ts`) only reads local flags/files, sends the shared `RunRequest` to `POST /run`,
+validates `RunResponse`, and renders it. This applies to local setup too: `openclaygent`
+defaults to the Compose API on `localhost:8080`. Keeping the engine out of the CLI prevents
+two execution paths from drifting and makes a remote deployment interchangeable through
+`--api-url` or `OPENCLAYGENT_API_URL`.
 
-The API is `@hono/zod-openapi`, not plain Hono: the request/response zod schemas are the
+The shared contract is in `src/core/http.ts`. The API is `@hono/zod-openapi`, not plain Hono:
+the request/response zod schemas are the
 single source of truth — they validate the body (malformed → `400` before the handler) *and*
 generate `/openapi.json` (served as a Scalar reference at `/docs`). A hand-written spec, or manual
 `safeParse` in the handler, would be a second source of truth that drifts.

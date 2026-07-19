@@ -21,17 +21,16 @@ Options:
   --model <id>            OpenRouter model id (default: google/gemini-3.1-flash-lite).
   --max-steps <n>         Max agent loop iterations (default: 5).
   --concurrency <n>       Rows to research in parallel (default: 5).
+  --api-url <url>         Openclaygent API (default: OPENCLAYGENT_API_URL or localhost:8080).
   --json                  Print the full RunResult envelope (sources, agentLog, tokens)
                           instead of just the result.
   --pretty                Human-readable per-row view with token stats.
-  --verbose               Adds result previews (titles, URLs, snippets) to the live step
-                          trace. The trace always streams to stderr.
   --out <file>            Also write the full results as JSON to this file.
   --help                  Show this.
 
 By default stdout carries the answer: { result, reasoning, sources } — the schema-shaped
-result, a one-line why, and the URLs behind it (an array for --rows). Steps and tokens are
-there when you ask (--json).`;
+result, a one-line why, and the URLs behind it (an array for --rows). The CLI always sends
+the run to the Openclaygent API; steps and tokens are there when you ask (--json).`;
 
 export type Flags = Record<string, string | boolean>;
 

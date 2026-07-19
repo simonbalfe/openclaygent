@@ -2,7 +2,6 @@ services:
   api:
     image: ghcr.io/simonbalfe/openclaygent:latest
     pull_policy: always
-    entrypoint: ["bun", "run", "src/api.ts"]
     container_name: openclaygent-api
     env_file: .env
     environment:
@@ -17,20 +16,6 @@ services:
       patchright:
         condition: service_started
     restart: unless-stopped
-
-  claygent:
-    image: ghcr.io/simonbalfe/openclaygent:latest
-    pull_policy: always
-    profiles: ["cli"]
-    env_file: .env
-    environment:
-      - SEARXNG_URL=http://searxng:8080
-      - PATCHRIGHT_URL=http://patchright:9223
-    depends_on:
-      searxng:
-        condition: service_healthy
-      patchright:
-        condition: service_started
 
   patchright:
     image: ghcr.io/simonbalfe/openclaygent-patchright:latest

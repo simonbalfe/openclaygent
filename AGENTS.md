@@ -10,14 +10,13 @@ its env is unset) — mechanism and rung order in `docs/architecture.md` (The to
 
 - `curl -fsSL <raw>/scripts/install.sh | bash` — the from-nothing entry (`scripts/install.sh`): clones the repo to `$HOME/openclaygent` (override `OPENCLAYGENT_DIR`/`OPENCLAYGENT_REPO`), installs Bun if missing, then execs `bun run scripts/setup.ts` with stdin bound to `/dev/tty` so the key prompts work even under `curl | bash`.
 - `bun run setup` — the one-click entry once cloned (`scripts/setup.ts`, needs Bun): `bun install`, creates `.env`, reuses any keys already exported in the shell env (skips prompting for those; also lets non-interactive `curl | bash` self-configure), prompts only for the rest (OpenRouter required; Exa/Tavily/Apify optional), and offers `docker compose up -d` which brings up the free stack **and** the API. The service URLs are auto-defaulted in code, never prompted.
-- `bun run cli -- --help` — the CLI entry (`src/cli.ts`); see `docs/architecture.md` (CLI). Setup runs `bun link`, so a global `openclaygent` command (package.json `bin`) also points at the install dir.
+- `bun run cli -- --help` — the thin HTTP CLI (`src/cli.ts`); it parses local files, calls `POST /run` at `OPENCLAYGENT_API_URL` (default `localhost:8080`), and renders the response. It never imports or runs the engine. Setup runs `bun link`, so a global `openclaygent` command also points at the install dir.
 - `./scripts/uninstall.sh` — clean wipe (confirm-gated, `-y`/`OPENCLAYGENT_YES=1` to skip). Reverts only what the install adds: `docker compose down -v`, removes the `openclaygent-api` + patchright images (all tags), `bun unlink` + drops the global `openclaygent` bin (only if it links into an openclaygent checkout), deletes `$HOME/openclaygent` (override `OPENCLAYGENT_DIR`) but only after confirming it's an openclaygent checkout and not `/`/`$HOME`. Never touches the shared `searxng` base image, other projects, or `~/.zshrc` keys.
-- `bun run api` — the HTTP entry (`src/api.ts`, Hono + OpenAPI): `POST /run`, `/docs`, `/openapi.json`, `/health` on `PORT` (default 8080). Both entries share `core/action.ts` + `runTable` — never duplicate run logic into either. See `docs/architecture.md` (HTTP API).
+- `bun run api` — the only research runtime (`src/api.ts`, Hono + OpenAPI): `POST /run`, `/docs`, `/openapi.json`, `/health` on `PORT` (default 8080). It owns `buildAction` + `runTable`; the CLI is only a client. See `docs/architecture.md` (HTTP API).
 - `bun run test:e2e` — the single live end-to-end test; requires `OPENROUTER_API_KEY` and exercises one URL through the full agent flow.
 - `bun run typecheck` — `tsc --noEmit`.
 - `bun run knip` — dead-code / unused-export / unused-dependency check.
-- `docker compose up -d` — pulls the three public GHCR images and starts SearXNG on :8888, Patchright on :9223, and the API on :8080. The `claygent` CLI is `profiles: [cli]`, so `up` never starts that one.
-- `docker compose run --rm claygent <cli args>` — the CLI containerized (`Dockerfile`, profile `cli` so `up` never starts it); talks to SearXNG at `http://searxng:8080` inside the stack.
+- `docker compose up -d` — pulls the three public GHCR images and starts SearXNG on :8888, Patchright on :9223, and the sole research runtime/API on :8080.
 - Needs `OPENROUTER_API_KEY` in `.env` (Bun auto-loads it). `SEARXNG_URL` / `PATCHRIGHT_URL` are auto-defaulted to the compose ports (`localhost:8888` / `localhost:9223`); set them only to point elsewhere, or empty to disable that rung. `EXA_API_KEY` is optional (paid search fallback + no-Docker path).
 
 ## Key files
@@ -25,7 +24,7 @@ its env is unset) — mechanism and rung order in `docs/architecture.md` (The to
 - `src/core/types.ts` — `Action` primitive + `RunResult` contract.
 - `src/core/engine.ts` — `run` (one row), `runTable` (a table).
 - `src/core/agent.ts` — Mastra agent + OpenRouter provider.
-- `src/core/action.ts` — `ActionSpec` + `buildAction`, the shared adapter both frontends call (no duplicated assembly); `src/core/schema.ts` — JSON-Schema/short-form → Zod builder.
+- `src/core/action.ts` — `ActionSpec` + `buildAction`, used by the API runtime; `src/core/schema.ts` — JSON-Schema/short-form → Zod builder; `src/core/http.ts` — shared validated HTTP contract.
 - `src/tools/` — Openclaygent adapters and enrichment tools: `web.ts` (assembler) · `search.ts` (evidence adapter around `open-search`) · `fetch.ts` (URL guard/evidence adapter around `open-extract`) · `sink.ts` (run provenance and trace) · `apify.ts` · `linkedin.ts` · `crunchbase.ts`.
 - `packages/open-search/` — isolated query-to-results package with its own provider ladder, CLI, dependencies, and `searxng/` service configuration.
 - `packages/open-extract/` — isolated URL-to-Markdown package with its own source, CLI, dependencies, and `patchright/` rendered-browser service.
